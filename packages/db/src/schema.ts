@@ -2,22 +2,17 @@ import { NODE_TYPES, PROJECT_ROLES } from "@manuspace/shared";
 import {
 	type AnyPgColumn,
 	boolean,
-	customType,
 	index,
 	integer,
+	jsonb,
 	pgEnum,
 	pgTable,
 	primaryKey,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
-
-const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
-	dataType: () => "bytea",
-	toDriver: (value) => Buffer.from(value),
-	fromDriver: (value) => new Uint8Array(value),
-});
 
 const timestamps = {
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -108,11 +103,35 @@ export const nodes = pgTable(
 	],
 );
 
-/** État d'un document texte, écrit par le serveur collab (éditeur à venir). */
-export const documentStates = pgTable("document_states", {
+/** Texte d'un document et sa révision (nombre d'opérations appliquées), écrits par le serveur collab. */
+export const documentContents = pgTable("document_contents", {
 	nodeId: uuid("node_id")
 		.primaryKey()
 		.references(() => nodes.id, { onDelete: "cascade" }),
-	state: bytea("state").notNull(),
+	content: text("content").notNull().default(""),
+	revision: integer("revision").notNull().default(0),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Journal des opérations OT : la révision n est l'opération n. Permet de rattraper un client
+ * revenu d'une coupure (opérations depuis sa révision) ; client_op_id rend chaque opération
+ * idempotente (un renvoi après une coupure n'est jamais appliqué deux fois).
+ */
+export const documentOperations = pgTable(
+	"document_operations",
+	{
+		nodeId: uuid("node_id")
+			.notNull()
+			.references(() => nodes.id, { onDelete: "cascade" }),
+		revision: integer("revision").notNull(),
+		clientOpId: text("client_op_id").notNull(),
+		operation: jsonb("operation").$type<(number | string)[]>().notNull(),
+		userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+		createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.nodeId, t.revision] }),
+		uniqueIndex("document_operations_client_op_idx").on(t.nodeId, t.clientOpId),
+	],
+);
