@@ -1,0 +1,24 @@
+{
+	"name": "@manuspace/db",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./schema": "./src/schema.ts"
+	},
+	"scripts": {
+		"generate": "bun --env-file=../../.env --bun drizzle-kit generate",
+		"migrate": "bun --env-file=../../.env --bun drizzle-kit migrate",
+		"studio": "bun --env-file=../../.env --bun drizzle-kit studio",
+		"typecheck": "tsc -p ."
+	},
+	"dependencies": {
+		"@manuspace/shared": "workspace:*",
+		"drizzle-orm": "^0.45.3",
+		"postgres": "^3.4.9"
+	},
+	"devDependencies": {
+		"drizzle-kit": "^0.31.11"
+	}
+}
