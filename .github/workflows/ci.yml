@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualite:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Même base qu'en local (infra/docker-compose.dev.yml) : les tests d'intégration
+    # utilisent une vraie base PostgreSQL.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: manuspace
+          POSTGRES_PASSWORD: manuspace
+          POSTGRES_DB: manuspace
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U manuspace"
+          --health-interval 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Dépendances
+        run: bun install --frozen-lockfile
+
+      - name: Lint et format (Biome)
+        run: bun run lint
+
+      - name: Types (TypeScript strict)
+        run: bun run typecheck
+
+      - name: Tests (API)
+        run: bun run test
+
+      - name: Build du front
+        run: bun run build
