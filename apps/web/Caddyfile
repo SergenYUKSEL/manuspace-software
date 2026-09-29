@@ -1,0 +1,44 @@
+# Service web : sert le front compilé et relaie /api/* vers l'API par le réseau privé.
+# Le navigateur ne voit qu'une origine : cookies de session same-site, sans CORS.
+{
+	admin off
+	# TLS terminé par Railway en amont.
+	auto_https off
+}
+
+:{$PORT:8080} {
+	encode zstd gzip
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# L'en-tête Host d'origine est conservé : la vérification CSRF de l'API reste valable.
+	handle /api/* {
+		reverse_proxy {$API_INTERNAL_URL}
+	}
+
+	handle {
+		root * /srv
+		# Fichiers générés par Vite : nom haché, cache permanent.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		# Tout le reste (index.html et routes de l'application) : toujours revalidé.
+		@pages not path /assets/*
+		header @pages Cache-Control "no-cache"
+		# Application monopage : toute route inconnue renvoie index.html.
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+		# 'unsafe-inline' pour les styles : injectés à l'exécution par certains composants (toasts).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+}
