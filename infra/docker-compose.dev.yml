@@ -1,0 +1,46 @@
+# Services locaux pour le dev : Postgres + stockage S3.
+# Les apps tournent directement avec Bun sur la machine (`bun dev`).
+name: manuspace
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: manuspace
+      POSTGRES_PASSWORD: manuspace
+      POSTGRES_DB: manuspace
+    ports: ["5434:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manuspace"]
+      interval: 5s
+      retries: 10
+
+  # Stockage S3-compatible (RustFS : MinIO n'est plus distribué en image Docker publique).
+  s3:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: manuspace
+      RUSTFS_SECRET_KEY: manuspace-secret
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [s3-data:/data]
+
+  # Crée le bucket au premier démarrage.
+  s3-init:
+    image: amazon/aws-cli:latest
+    depends_on: [s3]
+    restart: "no"
+    environment:
+      AWS_ACCESS_KEY_ID: manuspace
+      AWS_SECRET_ACCESS_KEY: manuspace-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        until aws --endpoint-url http://s3:9000 s3 ls >/dev/null 2>&1; do sleep 1; done
+        aws --endpoint-url http://s3:9000 s3 mb s3://manuspace || true
+
+volumes:
+  postgres-data:
+  s3-data:

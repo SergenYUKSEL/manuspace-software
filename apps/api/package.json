@@ -1,0 +1,28 @@
+{
+	"name": "@manuspace/api",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./app": "./src/app.ts"
+	},
+	"scripts": {
+		"dev": "bun --env-file=../../.env --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"create-admin": "bun --env-file=../../.env scripts/create-admin.ts",
+		"test": "bun test",
+		"typecheck": "tsc -p ."
+	},
+	"dependencies": {
+		"@hono/zod-validator": "^0.9.1",
+		"@manuspace/db": "workspace:*",
+		"@manuspace/shared": "workspace:*",
+		"@oslojs/otp": "^1.1.0",
+		"drizzle-orm": "^0.45.3",
+		"hono": "^4.13.10",
+		"zod": "^4.6.5"
+	},
+	"devDependencies": {
+		"postgres": "^3.4.9"
+	}
+}

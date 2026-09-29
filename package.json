@@ -1,0 +1,27 @@
+{
+	"name": "manuspace",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"dev": "bun run --filter '@manuspace/api' --filter '@manuspace/web' dev",
+		"build": "bun run --filter '@manuspace/web' build",
+		"typecheck": "bun run --filter '*' typecheck",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"test": "bun run --filter '*' test",
+		"db:generate": "bun run --filter '@manuspace/db' generate",
+		"db:migrate": "bun run --filter '@manuspace/db' migrate",
+		"infra:up": "docker compose -f infra/docker-compose.dev.yml up -d",
+		"infra:down": "docker compose -f infra/docker-compose.dev.yml down"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.14",
+		"@types/bun": "^1.4.2",
+		"railway": "^3.11.0",
+		"typescript": "^7.0.2"
+	}
+}
