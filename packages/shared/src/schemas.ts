@@ -101,3 +101,12 @@ export type ManuscriptMember = {
 	displayName: string;
 	role: ProjectRole;
 };
+
+/** Contenu du ticket signé par l'API et vérifié par le serveur collab. */
+export const collabTicketSchema = z.object({
+	sub: z.uuid(),
+	name: z.string(),
+	docId: z.uuid(),
+	role: z.enum(PROJECT_ROLES),
+});
+export type CollabTicket = z.infer<typeof collabTicketSchema>;

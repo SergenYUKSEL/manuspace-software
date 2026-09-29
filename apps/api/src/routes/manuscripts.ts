@@ -9,13 +9,22 @@ import {
 	updateMemberSchema,
 	updateNodeSchema,
 } from "@manuspace/shared";
-import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { db } from "../db";
 import { isUniqueViolation } from "../lib/errors";
 import { DEFAULT_TREE, listManuscripts } from "../lib/manuscripts";
+import {
+	assertFolder,
+	findNode,
+	listNodes,
+	nextPosition,
+	notFound,
+	wouldCreateCycle,
+} from "../lib/nodes";
+import { deleteObjects } from "../lib/storage";
 import { validate } from "../lib/validator";
 import { requireAuth } from "../middleware/auth";
 import { type ManuscriptEnv, requireRole } from "../middleware/manuscript";
@@ -24,75 +33,6 @@ const { manuscripts, nodes, projectMembers, users } = schema;
 
 const nodeParam = validate("param", z.object({ id: z.uuid(), nodeId: z.uuid() }));
 const memberParam = validate("param", z.object({ id: z.uuid(), userId: z.uuid() }));
-
-const notFound = (message: string) => new HTTPException(404, { message });
-
-async function findNode(manuscriptId: string, nodeId: string) {
-	const node = await db.query.nodes.findFirst({
-		where: and(eq(nodes.id, nodeId), eq(nodes.manuscriptId, manuscriptId), isNull(nodes.deletedAt)),
-	});
-	if (!node) throw notFound("Élément introuvable");
-	return node;
-}
-
-/** Le parent doit être un dossier non supprimé du même manuscrit. */
-async function assertFolder(manuscriptId: string, parentId: string | null) {
-	if (parentId === null) return;
-	const parent = await findNode(manuscriptId, parentId).catch(() => null);
-	if (parent?.type !== "folder") {
-		throw new HTTPException(400, { message: "Le parent doit être un dossier du manuscrit" });
-	}
-}
-
-/** Position après le dernier enfant du dossier (ou de la racine). */
-async function nextPosition(manuscriptId: string, parentId: string | null) {
-	const [row] = await db
-		.select({ last: max(nodes.position) })
-		.from(nodes)
-		.where(
-			and(
-				eq(nodes.manuscriptId, manuscriptId),
-				parentId ? eq(nodes.parentId, parentId) : isNull(nodes.parentId),
-				isNull(nodes.deletedAt),
-			),
-		);
-	return (row?.last ?? -1) + 1;
-}
-
-/** Vrai si `candidateParentId` est `nodeId` lui-même ou l'un de ses descendants. */
-async function wouldCreateCycle(manuscriptId: string, nodeId: string, candidateParentId: string) {
-	const all = await db
-		.select({ id: nodes.id, parentId: nodes.parentId })
-		.from(nodes)
-		.where(eq(nodes.manuscriptId, manuscriptId));
-	const parentOf = new Map(all.map((n) => [n.id, n.parentId]));
-	for (let id: string | null = candidateParentId; id; id = parentOf.get(id) ?? null) {
-		if (id === nodeId) return true;
-	}
-	return false;
-}
-
-async function listNodes(manuscriptId: string): Promise<ManuscriptNode[]> {
-	const rows = await db
-		.select({ node: nodes, updaterName: users.displayName })
-		.from(nodes)
-		.leftJoin(users, eq(users.id, nodes.updatedById))
-		.where(and(eq(nodes.manuscriptId, manuscriptId), isNull(nodes.deletedAt)))
-		.orderBy(asc(nodes.position), asc(nodes.createdAt));
-	return rows.map(({ node, updaterName }) => ({
-		id: node.id,
-		parentId: node.parentId,
-		type: node.type,
-		name: node.name,
-		position: node.position,
-		wordCount: node.wordCount,
-		mimeType: node.mimeType,
-		sizeBytes: node.sizeBytes,
-		updatedAt: node.updatedAt.toISOString(),
-		updatedBy:
-			node.updatedById && updaterName ? { id: node.updatedById, displayName: updaterName } : null,
-	}));
-}
 
 export const manuscriptRoutes = new Hono<ManuscriptEnv>()
 	.use(requireAuth)
@@ -149,7 +89,14 @@ export const manuscriptRoutes = new Hono<ManuscriptEnv>()
 		return c.json(summary as NonNullable<typeof summary>);
 	})
 	.delete("/:id", requireRole("OWNER"), async (c) => {
-		await db.delete(manuscripts).where(eq(manuscripts.id, c.req.param("id")));
+		const manuscriptId = c.req.param("id");
+		// Clés des fichiers (y compris supprimés) avant que la cascade n'efface les nœuds.
+		const files = await db
+			.select({ key: nodes.storageKey })
+			.from(nodes)
+			.where(and(eq(nodes.manuscriptId, manuscriptId), eq(nodes.type, "file")));
+		await db.delete(manuscripts).where(eq(manuscripts.id, manuscriptId));
+		await deleteObjects(files.map((f) => f.key));
 		return c.json({ ok: true });
 	})
 

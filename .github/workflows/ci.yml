@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Même base qu'en local (infra/docker-compose.dev.yml) : les tests d'intégration
-    # utilisent une vraie base PostgreSQL.
+    # Mêmes services qu'en local (infra/docker-compose.dev.yml) : les tests d'intégration
+    # utilisent une vraie base PostgreSQL et un vrai stockage S3.
     services:
       postgres:
         image: postgres:17-alpine
@@ -29,6 +29,12 @@ jobs:
           --health-cmd "pg_isready -U manuspace"
           --health-interval 5s
           --health-retries 10
+      s3:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: manuspace
+          RUSTFS_SECRET_KEY: manuspace-secret
+        ports: ["9000:9000"]
 
     steps:
       - uses: actions/checkout@v4
@@ -40,14 +46,28 @@ jobs:
       - name: Dépendances
         run: bun install --frozen-lockfile
 
+      - name: Bucket S3 de test
+        env:
+          AWS_ACCESS_KEY_ID: manuspace
+          AWS_SECRET_ACCESS_KEY: manuspace-secret
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          for i in $(seq 1 30); do
+            aws --endpoint-url http://localhost:9000 s3 ls >/dev/null 2>&1 && break
+            sleep 1
+          done
+          aws --endpoint-url http://localhost:9000 s3 mb s3://manuspace
+
       - name: Lint et format (Biome)
         run: bun run lint
 
       - name: Types (TypeScript strict)
         run: bun run typecheck
 
-      - name: Tests (API)
+      - name: Tests (OT, Markdown, API, serveur collab, éditeur)
         run: bun run test
 
       - name: Build du front
         run: bun run build
+        env:
+          VITE_COLLAB_URL: wss://manuspace-collab.up.railway.app
