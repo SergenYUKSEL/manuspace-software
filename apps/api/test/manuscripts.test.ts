@@ -201,11 +201,12 @@ describe("arborescence", () => {
 		expect((await move(manuscrit.id, univers.id)).res.status).toBe(400);
 	});
 
-	test("suppression d'un dossier : tout son contenu disparaît", async () => {
+	test("suppression d'un dossier : tout son contenu disparaît, plus de ticket collab", async () => {
 		const { cookie } = await loggedInUser();
 		const manuscript = await createManuscript(cookie);
 		const nodes = await getNodes(cookie, manuscript.id);
 		const folder = byName(nodes, "Manuscrit");
+		const chapter = byName(nodes, "Chapitre 1");
 
 		const deleted = await request("DELETE", `/manuscripts/${manuscript.id}/nodes/${folder.id}`, {
 			cookie,
@@ -215,6 +216,8 @@ describe("arborescence", () => {
 		const names = (await getNodes(cookie, manuscript.id)).map((n) => n.name);
 		expect(names).not.toContain("Manuscrit");
 		expect(names).not.toContain("Chapitre 1");
+		const ticket = await request("POST", `/documents/${chapter.id}/collab-ticket`, { cookie });
+		expect(ticket.res.status).toBe(404);
 	});
 
 	test("élément d'un autre manuscrit : 404", async () => {

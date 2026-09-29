@@ -58,3 +58,22 @@ export async function loggedInUser(values: Partial<typeof schema.users.$inferIns
 	if (!cookie) throw new Error("loggedInUser : pas de cookie");
 	return { user, cookie };
 }
+
+/** Envoi multipart (import de fichier), comme un formulaire du navigateur. */
+export async function upload(
+	method: "POST" | "PUT",
+	path: string,
+	cookie: string,
+	fields: Record<string, string | File>,
+) {
+	const body = new FormData();
+	for (const [key, value] of Object.entries(fields)) body.append(key, value);
+	const res = await app.request(`/api${path}`, {
+		method,
+		headers: { host: "localhost", origin: "http://localhost", cookie },
+		body,
+	});
+	// biome-ignore lint/suspicious/noExplicitAny: corps JSON libre dans les tests
+	const json: any = res.headers.get("content-type")?.includes("json") ? await res.json() : null;
+	return { res, json };
+}
