@@ -1,0 +1,22 @@
+{
+	"name": "@manuspace/collab",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --env-file=../../.env --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"typecheck": "tsc -p .",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@manuspace/db": "workspace:*",
+		"@manuspace/shared": "workspace:*",
+		"drizzle-orm": "^0.45.3",
+		"jose": "^6.2.12",
+		"zod": "^4.6.5"
+	},
+	"devDependencies": {
+		"postgres": "^3.4.9"
+	}
+}
