@@ -7,7 +7,7 @@
 		"packages/*"
 	],
 	"scripts": {
-		"dev": "bun run --filter '@manuspace/api' --filter '@manuspace/web' dev",
+		"dev": "bun run --filter '@manuspace/api' --filter '@manuspace/collab' --filter '@manuspace/web' dev",
 		"build": "bun run --filter '@manuspace/web' build",
 		"typecheck": "bun run --filter '*' typecheck",
 		"lint": "biome check .",

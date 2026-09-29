@@ -8,7 +8,7 @@ import {
 	Trash2Icon,
 	UsersIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -26,6 +26,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api, call } from "@/lib/api";
+import { ACCEPTED_TYPES, replaceFile, uploadFile } from "@/lib/files";
 import {
 	ancestry,
 	childrenByParent,
@@ -70,6 +71,58 @@ function ManuscriptPage() {
 	const path = ancestry(nodes, selected?.id);
 
 	const select = (nodeId: string | undefined) => navigate({ search: { node: nodeId } });
+
+	// Sélecteur de fichiers caché : ouvert depuis un menu ou un bouton (geste utilisateur).
+	const fileInput = useRef<HTMLInputElement>(null);
+	const fileTarget = useRef<Extract<NodeAction, { kind: "upload" | "replace" }> | null>(null);
+
+	function handleAction(action: NodeAction) {
+		if (action.kind === "upload" || action.kind === "replace") {
+			fileTarget.current = action;
+			const input = fileInput.current;
+			if (!input) return;
+			input.multiple = action.kind === "upload";
+			input.value = "";
+			input.click();
+			return;
+		}
+		setDialog(action);
+	}
+
+	/** Import de un ou plusieurs fichiers, avec une notification par fichier. */
+	async function importFiles(files: File[], parentId: string | null) {
+		let lastId: string | undefined;
+		for (const file of files) {
+			const upload = uploadFile(id, file, parentId);
+			toast.promise(upload, {
+				loading: `Import de « ${file.name} »…`,
+				success: `« ${file.name} » importé`,
+				error: (error: Error) => error.message,
+			});
+			try {
+				lastId = (await upload).id;
+			} catch {
+				// Déjà signalé par la notification ; on continue avec les fichiers suivants.
+			}
+		}
+		refresh();
+		if (lastId && files.length === 1) select(lastId);
+	}
+
+	async function onFilesPicked(files: File[]) {
+		const target = fileTarget.current;
+		if (!target || files.length === 0) return;
+		if (target.kind === "upload") return importFiles(files, target.parentId);
+		const [file] = files as [File];
+		const replacing = replaceFile(id, target.node.id, file);
+		toast.promise(replacing, {
+			loading: `Remplacement de « ${target.node.name} »…`,
+			success: `« ${target.node.name} » remplacé`,
+			error: (error: Error) => error.message,
+		});
+		await replacing.catch(() => {});
+		refresh();
+	}
 	const closeDialog = () => setDialog(null);
 	const refresh = () => {
 		queryClient.invalidateQueries({ queryKey: nodesQuery(id).queryKey });
@@ -204,21 +257,33 @@ function ManuscriptPage() {
 						selectedId={selected?.id}
 						canEdit={canEdit}
 						onSelect={select}
-						onAction={setDialog}
+						onAction={handleAction}
 						onMove={(nodeId, parentId) => updateNode.mutate({ nodeId, parentId })}
 					/>
 				</aside>
 				<section>
 					<NodeDetails
 						node={selected}
+						manuscriptId={id}
+						user={user}
 						items={detailItems}
 						canEdit={canEdit}
 						onSelect={select}
-						onAction={setDialog}
+						onAction={handleAction}
+						onDropFiles={importFiles}
 					/>
 				</section>
 			</div>
 
+			<input
+				ref={fileInput}
+				type="file"
+				accept={ACCEPTED_TYPES}
+				className="hidden"
+				aria-hidden="true"
+				tabIndex={-1}
+				onChange={(e) => onFilesPicked([...(e.target.files ?? [])])}
+			/>
 			<NameDialog
 				open={dialog?.kind === "create"}
 				onOpenChange={(open) => !open && closeDialog()}

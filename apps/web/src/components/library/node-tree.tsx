@@ -6,7 +6,9 @@ import {
 	FolderPlusIcon,
 	MoreHorizontalIcon,
 	PencilIcon,
+	RefreshCwIcon,
 	Trash2Icon,
+	UploadIcon,
 } from "lucide-react";
 import { type DragEvent, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -132,7 +134,7 @@ export function NodeTree({ nodes, selectedId, canEdit, onSelect, onAction, onMov
 							className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:underline"
 							onClick={() => onSelect(node.id)}
 						>
-							<NodeIcon type={node.type} open={isOpen} />
+							<NodeIcon type={node.type} mimeType={node.mimeType} open={isOpen} />
 							<span className="truncate">{node.name}</span>
 						</button>
 						{canEdit && (
@@ -209,12 +211,20 @@ function NodeMenu({
 						>
 							<FolderPlusIcon /> Nouveau dossier
 						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => onAction({ kind: "upload", parentId: node.id })}>
+							<UploadIcon /> Importer un fichier
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 					</>
 				)}
 				<DropdownMenuItem onClick={() => onAction({ kind: "rename", node })}>
 					<PencilIcon /> Renommer
 				</DropdownMenuItem>
+				{node.type === "file" && (
+					<DropdownMenuItem onClick={() => onAction({ kind: "replace", node })}>
+						<RefreshCwIcon /> Remplacer le fichier
+					</DropdownMenuItem>
+				)}
 				{targets.length > 0 && (
 					<DropdownMenuSub>
 						<DropdownMenuSubTrigger className="whitespace-nowrap">

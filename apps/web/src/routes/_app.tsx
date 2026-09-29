@@ -3,6 +3,7 @@ import { createFileRoute, Link, Outlet, redirect, useNavigate } from "@tanstack/
 import { Button } from "@/components/ui/button";
 import { api, call } from "@/lib/api";
 import { meQuery } from "@/lib/auth";
+import { clearOfflineDocuments } from "@/lib/offline";
 
 /** Layout des pages authentifiées : redirige vers /login sans session. */
 export const Route = createFileRoute("/_app")({
@@ -20,7 +21,8 @@ function AppLayout() {
 
 	const logout = useMutation({
 		mutationFn: () => call(api.auth.logout.$post()),
-		onSuccess: () => {
+		onSuccess: async () => {
+			await clearOfflineDocuments();
 			queryClient.clear();
 			queryClient.setQueryData(meQuery.queryKey, null);
 			navigate({ to: "/login" });

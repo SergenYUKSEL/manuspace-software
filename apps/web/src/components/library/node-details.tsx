@@ -1,5 +1,7 @@
 import type { ManuscriptNode } from "@manuspace/shared";
-import { FilePlusIcon, FolderPlusIcon, PenLineIcon } from "lucide-react";
+import { FilePlusIcon, FolderPlusIcon, UploadIcon } from "lucide-react";
+import { type DragEvent, useState } from "react";
+import { ManuscriptEditor } from "@/components/editor/manuscript-editor";
 import { Button } from "@/components/ui/button";
 import {
 	Table,
@@ -9,20 +11,38 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatUpdatedAt, wordCountLabel } from "@/lib/manuscripts";
+import { fileKindLabel, formatSize } from "@/lib/files";
+import { formatUpdatedAt } from "@/lib/manuscripts";
+import { cn } from "@/lib/utils";
+import { FileDetails } from "./file-details";
 import type { NodeAction } from "./node-actions";
 import { NodeIcon } from "./node-icon";
 
 type Props = {
 	/** Nœud sélectionné, ou undefined pour la racine du manuscrit. */
 	node: ManuscriptNode | undefined;
+	manuscriptId: string;
+	user: { id: string; displayName: string };
 	items: ManuscriptNode[];
 	canEdit: boolean;
 	onSelect: (nodeId: string) => void;
 	onAction: (action: NodeAction) => void;
+	/** Fichiers glissés depuis l'ordinateur sur un dossier. */
+	onDropFiles: (files: File[], parentId: string | null) => void;
 };
 
-const TYPE_LABELS = { folder: "Dossier", text: "Document", file: "Fichier" } as const;
+function typeLabel(node: ManuscriptNode) {
+	if (node.type === "folder") return "Dossier";
+	if (node.type === "text") return "Document";
+	return fileKindLabel(node);
+}
+
+/** Mots pour un document, poids pour un fichier. */
+function sizeLabel(node: ManuscriptNode) {
+	if (node.type === "text") return `${(node.wordCount ?? 0).toLocaleString("fr")} mots`;
+	if (node.type === "file") return formatSize(node.sizeBytes);
+	return "—";
+}
 
 function UpdatedBy({ node }: { node: ManuscriptNode }) {
 	return (
@@ -33,31 +53,60 @@ function UpdatedBy({ node }: { node: ManuscriptNode }) {
 	);
 }
 
-export function NodeDetails({ node, items, canEdit, onSelect, onAction }: Props) {
+export function NodeDetails(props: Props) {
+	const { node, manuscriptId, user, canEdit, onAction } = props;
+
 	if (node?.type === "text") {
 		return (
-			<div className="grid gap-4">
-				<header>
-					<h2 className="font-serif text-2xl">{node.name}</h2>
-					<p className="mt-1 text-sm text-muted-foreground">
-						{wordCountLabel(node.wordCount)} · modifié <UpdatedBy node={node} />
-					</p>
-				</header>
-				<div className="grid place-items-center gap-2 rounded-xl border border-dashed py-20 text-center text-muted-foreground">
-					<PenLineIcon className="size-6" />
-					<p>L'éditeur arrive à la prochaine étape.</p>
-				</div>
-			</div>
+			<ManuscriptEditor
+				key={node.id}
+				node={node}
+				manuscriptId={manuscriptId}
+				user={user}
+				canEdit={canEdit}
+			/>
 		);
 	}
+	if (node?.type === "file") {
+		return (
+			<FileDetails node={node} manuscriptId={manuscriptId} canEdit={canEdit} onAction={onAction} />
+		);
+	}
+	return <FolderDetails {...props} />;
+}
 
+function FolderDetails({ node, items, canEdit, onSelect, onAction, onDropFiles }: Props) {
 	const parentId = node?.id ?? null;
+	const [dragging, setDragging] = useState(false);
+
+	const isFileDrag = (e: DragEvent) => canEdit && e.dataTransfer.types.includes("Files");
+
 	return (
-		<div className="grid gap-4">
+		<section
+			aria-label={node ? `Contenu de ${node.name}` : "Sommaire du manuscrit"}
+			className={cn(
+				"grid gap-4 rounded-xl outline-2 outline-offset-4 outline-transparent transition-colors",
+				dragging && "outline-dashed outline-primary",
+			)}
+			onDragOver={(e) => {
+				if (!isFileDrag(e)) return;
+				e.preventDefault();
+				setDragging(true);
+			}}
+			onDragLeave={(e) => {
+				if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+			}}
+			onDrop={(e) => {
+				if (!isFileDrag(e)) return;
+				e.preventDefault();
+				setDragging(false);
+				onDropFiles([...e.dataTransfer.files], parentId);
+			}}
+		>
 			<header className="flex flex-wrap items-center justify-between gap-3">
 				<h2 className="font-serif text-2xl">{node?.name ?? "Sommaire"}</h2>
 				{canEdit && (
-					<div className="flex gap-2">
+					<div className="flex flex-wrap gap-2">
 						<Button
 							size="sm"
 							variant="outline"
@@ -72,12 +121,20 @@ export function NodeDetails({ node, items, canEdit, onSelect, onAction }: Props)
 						>
 							<FolderPlusIcon /> Dossier
 						</Button>
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() => onAction({ kind: "upload", parentId })}
+						>
+							<UploadIcon /> Importer
+						</Button>
 					</div>
 				)}
 			</header>
 			{items.length === 0 ? (
 				<p className="rounded-xl border border-dashed py-12 text-center text-sm text-muted-foreground">
 					Ce dossier est vide.
+					{canEdit && <> Glissez-y des PDF ou des images pour les importer.</>}
 				</p>
 			) : (
 				<Table>
@@ -85,7 +142,7 @@ export function NodeDetails({ node, items, canEdit, onSelect, onAction }: Props)
 						<TableRow>
 							<TableHead>Nom</TableHead>
 							<TableHead className="hidden sm:table-cell">Type</TableHead>
-							<TableHead className="hidden md:table-cell">Mots</TableHead>
+							<TableHead className="hidden md:table-cell">Taille</TableHead>
 							<TableHead>Dernière modification</TableHead>
 						</TableRow>
 					</TableHeader>
@@ -101,15 +158,15 @@ export function NodeDetails({ node, items, canEdit, onSelect, onAction }: Props)
 											onSelect(item.id);
 										}}
 									>
-										<NodeIcon type={item.type} />
+										<NodeIcon type={item.type} mimeType={item.mimeType} />
 										{item.name}
 									</button>
 								</TableCell>
 								<TableCell className="hidden text-muted-foreground sm:table-cell">
-									{TYPE_LABELS[item.type]}
+									{typeLabel(item)}
 								</TableCell>
 								<TableCell className="hidden text-muted-foreground md:table-cell">
-									{item.type === "text" ? (item.wordCount ?? 0).toLocaleString("fr") : "—"}
+									{sizeLabel(item)}
 								</TableCell>
 								<TableCell className="text-muted-foreground">
 									<UpdatedBy node={item} />
@@ -119,6 +176,11 @@ export function NodeDetails({ node, items, canEdit, onSelect, onAction }: Props)
 					</TableBody>
 				</Table>
 			)}
-		</div>
+			{canEdit && items.length > 0 && (
+				<p className="text-xs text-muted-foreground">
+					Astuce : glissez des PDF ou des images ici pour les importer dans ce dossier (20 Mo max).
+				</p>
+			)}
+		</section>
 	);
 }

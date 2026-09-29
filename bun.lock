@@ -21,6 +21,21 @@
         "@oslojs/otp": "^1.1.0",
         "drizzle-orm": "^0.45.3",
         "hono": "^4.13.10",
+        "jose": "^6.2.12",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "postgres": "^3.4.9",
+      },
+    },
+    "apps/collab": {
+      "name": "@manuspace/collab",
+      "version": "0.0.0",
+      "dependencies": {
+        "@manuspace/db": "workspace:*",
+        "@manuspace/shared": "workspace:*",
+        "drizzle-orm": "^0.45.3",
+        "jose": "^6.2.12",
         "zod": "^4.6.5",
       },
       "devDependencies": {
@@ -252,6 +267,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@manuspace/api": ["@manuspace/api@workspace:apps/api"],
+
+    "@manuspace/collab": ["@manuspace/collab@workspace:apps/collab"],
 
     "@manuspace/db": ["@manuspace/db@workspace:packages/db"],
 
