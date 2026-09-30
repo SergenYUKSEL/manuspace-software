@@ -168,7 +168,7 @@ describe("serveur collab : édition", () => {
 	});
 });
 
-describe("serveur collab : présence", () => {
+describe("serveur collab : présence et appel", () => {
 	test("présence : arrivée, sélection, départ", async () => {
 		const { userId, docId } = await fixture();
 		const a = await TestClient.join(await ticket(userId, docId, "OWNER", "Autrice"));
@@ -187,10 +187,34 @@ describe("serveur collab : présence", () => {
 		expect((await a.client.next("peer-left")).sessionId).toBe(b.ready.sessionId);
 		a.client.close();
 	});
+
+	test("appel : signal au seul destinataire, usurpation refusée, départ annoncé", async () => {
+		const { userId, docId } = await fixture();
+		const [a, b, c] = await Promise.all(
+			[1, 2, 3].map(async () => TestClient.join(await ticket(userId, docId, "VIEWER"))),
+		);
+		const offer = { kind: "description", description: { type: "offer", sdp: "v=0" } };
+		a?.client.send({ type: "call-join", peerId: "peer-aaaa" });
+		b?.client.send({ type: "call-join", peerId: "peer-bbbb" });
+		await wait(150);
+
+		a?.client.send({ type: "call-signal", from: "peer-aaaa", to: "peer-bbbb", signal: offer });
+		expect((await b?.client.next("call-signal"))?.from).toBe("peer-aaaa");
+		expect(await c?.client.none("call-signal")).toBe(true);
+
+		c?.client.send({ type: "call-signal", from: "peer-aaaa", to: "peer-bbbb", signal: offer });
+		c?.client.send({ type: "call-join", peerId: "peer-bbbb" });
+		expect(await b?.client.none("call-signal")).toBe(true);
+
+		a?.client.close();
+		expect((await b?.client.next("call-peer-left"))?.peerId).toBe("peer-aaaa");
+		b?.client.close();
+		c?.client.close();
+	});
 });
 
 describe("serveur collab : arrêt", () => {
-	test("redémarrage : aucun départ annoncé aux clients", async () => {
+	test("redémarrage : aucun départ annoncé (les appels en cours ne raccrochent pas)", async () => {
 		const { startServer } = await import("../src/server");
 		const instance = startServer(0);
 		const { userId, docId } = await fixture();
@@ -207,10 +231,72 @@ describe("serveur collab : arrêt", () => {
 		};
 		const a = await join();
 		const b = await join();
+		a.socket.send(JSON.stringify({ type: "call-join", peerId: "peer-aaaa" }));
+		b.socket.send(JSON.stringify({ type: "call-join", peerId: "peer-bbbb" }));
+		await wait(150);
+
 		await instance.stop();
 		await wait(150);
 		for (const client of [a, b]) {
-			expect(client.messages.some((m) => m.type === "peer-left")).toBe(false);
+			expect(
+				client.messages.some((m) => m.type === "call-peer-left" || m.type === "peer-left"),
+			).toBe(false);
 		}
+	});
+});
+
+describe("serveur collab : messagerie de session", () => {
+	test("message diffusé à tous (expéditeur compris), bêta-lecteur autorisé", async () => {
+		const { userId, docId } = await fixture();
+		const author = await TestClient.join(await ticket(userId, docId, "OWNER", "Autrice"));
+		const reader = await TestClient.join(await ticket(userId, docId, "VIEWER", "Lectrice"));
+		expect(author.ready.chat).toEqual([]);
+
+		reader.client.send({ type: "chat", text: "  Le chapitre 3 est superbe !  " });
+		const [toAuthor, toReader] = await Promise.all([
+			author.client.next("chat"),
+			reader.client.next("chat"),
+		]);
+		expect(toAuthor.message).toMatchObject({
+			name: "Lectrice",
+			text: "Le chapitre 3 est superbe !",
+		});
+		expect(toReader.message.id).toBe(toAuthor.message.id);
+		expect(Number.isNaN(Date.parse(toAuthor.message.sentAt))).toBe(false);
+		author.client.close();
+		reader.client.close();
+	});
+
+	test("en rejoignant la session : les messages précédents sont reçus", async () => {
+		const { userId, docId } = await fixture();
+		const first = await TestClient.join(await ticket(userId, docId));
+		first.client.send({ type: "chat", text: "On relit la scène du phare ?" });
+		await first.client.next("chat");
+		const late = await TestClient.join(await ticket(userId, docId));
+		expect(late.ready.chat.map((m) => m.text)).toEqual(["On relit la scène du phare ?"]);
+		first.client.close();
+		late.client.close();
+	});
+
+	test("message vide ou trop long refusé, HTML gardé comme texte", async () => {
+		const { userId, docId } = await fixture();
+		const { client } = await TestClient.join(await ticket(userId, docId));
+		client.send({ type: "chat", text: "   " });
+		expect((await client.next("error")).code).toBe("invalid");
+		client.send({ type: "chat", text: "x".repeat(2001) });
+		expect((await client.next("error")).code).toBe("invalid");
+		client.send({ type: "chat", text: "<img src=x onerror=alert(1)>" });
+		expect((await client.next("chat")).message.text).toBe("<img src=x onerror=alert(1)>");
+		client.close();
+	});
+
+	test("anti-inondation : au-delà de 10 messages en 10 s, refus", async () => {
+		const { userId, docId } = await fixture();
+		const { client } = await TestClient.join(await ticket(userId, docId));
+		for (let i = 0; i < 11; i++) client.send({ type: "chat", text: `message ${i}` });
+		expect((await client.next("error")).code).toBe("rate-limited");
+		await wait(100);
+		expect(client.received.filter((m) => m.type === "chat")).toHaveLength(10);
+		client.close();
 	});
 });

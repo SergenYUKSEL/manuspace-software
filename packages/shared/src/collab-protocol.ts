@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type CallPresence, type CallServerMessage, callClientMessageSchema } from "./call";
 import type { Component } from "./ot/text-operation";
 
 /**
@@ -7,6 +8,7 @@ import type { Component } from "./ot/text-operation";
  */
 
 const MAX_INSERT = 200_000;
+export const CHAT_MAX_LENGTH = 2_000;
 
 const componentSchema = z.union([
 	z
@@ -34,25 +36,31 @@ export type Selection = z.infer<typeof selectionSchema>;
 const revisionSchema = z.number().int().min(0);
 const opIdSchema = z.string().min(8).max(64);
 
-export const collabClientMessageSchema = z.discriminatedUnion("type", [
-	/** Premier message : ticket délivré par l'API, et révision déjà connue (hors ligne). */
-	z.object({
-		type: z.literal("hello"),
-		ticket: z.string().max(4_000),
-		since: revisionSchema.nullable(),
-	}),
-	z.object({
-		type: z.literal("op"),
-		revision: revisionSchema,
-		id: opIdSchema,
-		operation: operationSchema,
-	}),
-	z.object({
-		type: z.literal("selection"),
-		revision: revisionSchema,
-		selection: selectionSchema.nullable(),
-	}),
-	z.object({ type: z.literal("ping") }),
+export const collabClientMessageSchema = z.union([
+	z.discriminatedUnion("type", [
+		/** Premier message : ticket délivré par l'API, et révision déjà connue (hors ligne). */
+		z.object({
+			type: z.literal("hello"),
+			ticket: z.string().max(4_000),
+			since: revisionSchema.nullable(),
+		}),
+		z.object({
+			type: z.literal("op"),
+			revision: revisionSchema,
+			id: opIdSchema,
+			operation: operationSchema,
+		}),
+		z.object({
+			type: z.literal("selection"),
+			revision: revisionSchema,
+			selection: selectionSchema.nullable(),
+		}),
+		z.object({ type: z.literal("call-mute"), muted: z.boolean() }),
+		/** Messagerie de session : texte brut, affiché tel quel (jamais interprété comme du HTML). */
+		z.object({ type: z.literal("chat"), text: z.string().trim().min(1).max(CHAT_MAX_LENGTH) }),
+		z.object({ type: z.literal("ping") }),
+	]),
+	callClientMessageSchema,
 ]);
 export type CollabClientMessage = z.infer<typeof collabClientMessageSchema>;
 
@@ -62,6 +70,17 @@ export type PeerState = {
 	name: string;
 	color: string;
 	selection: (Selection & { revision: number }) | null;
+	call: CallPresence | null;
+};
+
+export type ChatMessage = {
+	id: string;
+	userId: string;
+	name: string;
+	color: string;
+	text: string;
+	/** Horodatage du serveur (ISO 8601). */
+	sentAt: string;
 };
 
 export type SerializedOperation = { id: string; operation: Component[] };
@@ -76,14 +95,18 @@ export type CollabServerMessage =
 			/** Texte complet (première ouverture) ou opérations manquées depuis `since`. */
 			text?: string;
 			operations?: SerializedOperation[];
+			/** Derniers messages de la session de discussion du document. */
+			chat: ChatMessage[];
 	  }
+	| { type: "chat"; message: ChatMessage }
 	| { type: "ack"; id: string; revision: number }
 	| { type: "op"; id: string; revision: number; operation: Component[]; sessionId: string }
 	| { type: "peer"; peer: PeerState }
 	| { type: "peer-left"; sessionId: string }
 	| {
 			type: "error";
-			code: "unauthorized" | "invalid" | "forbidden" | "desync" | "server";
+			code: "unauthorized" | "invalid" | "forbidden" | "desync" | "rate-limited" | "server";
 			message: string;
 	  }
-	| { type: "pong" };
+	| { type: "pong" }
+	| CallServerMessage;

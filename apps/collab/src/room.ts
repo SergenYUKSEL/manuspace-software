@@ -1,4 +1,6 @@
 import {
+	type CallClientMessage,
+	type ChatMessage,
 	type CollabClientMessage,
 	type CollabServerMessage,
 	ServerDocument,
@@ -7,6 +9,12 @@ import {
 import { appendOperation, loadDocument, loadOperations, saveSnapshot } from "./persistence";
 import type { Session } from "./session";
 
+/** Messages de discussion gardés pour ceux qui rejoignent la session en cours. */
+const CHAT_HISTORY = 100;
+/** Anti-inondation : au plus CHAT_BURST messages par fenêtre de CHAT_WINDOW ms et par session. */
+const CHAT_BURST = 10;
+const CHAT_WINDOW = 10_000;
+
 /** Opérations gardées en mémoire (au-delà : relues en base pour rattraper un client). */
 const HISTORY_IN_MEMORY = 500;
 /** Instantané 2 s après la dernière modification, au plus tard toutes les 10 s. */
@@ -14,7 +22,7 @@ const SAVE_DEBOUNCE = 2_000;
 const SAVE_MAX_DELAY = 10_000;
 
 /**
- * Un document ouvert : autorité OT (ServerDocument), sessions connectées, présence.
+ * Un document ouvert : autorité OT (ServerDocument), sessions connectées, présence, appel.
  * Les opérations d'un document sont traitées une par une (file) : l'ordre des révisions
  * est garanti même avec les écritures asynchrones en base.
  */
@@ -24,6 +32,13 @@ export class Room {
 	private dirtySince: number | null = null;
 	private saveTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastEditorId: string | undefined;
+	/**
+	 * Discussion de la session d'édition : en mémoire tant que le document est ouvert
+	 * (messagerie « pendant une session d'édition », pas un historique permanent).
+	 */
+	private readonly chat: ChatMessage[] = [];
+	/** peerId de l'appel → session propriétaire. */
+	private readonly callPeers = new Map<string, Session>();
 
 	private constructor(
 		readonly documentId: string,
@@ -69,6 +84,7 @@ export class Room {
 				revision: this.document.revision,
 				readOnly: session.readOnly,
 				peers,
+				chat: this.chat,
 			} as const;
 			if (since !== null && since <= this.document.revision) {
 				await this.ensureHistory(since);
@@ -85,6 +101,7 @@ export class Room {
 
 	leave(session: Session) {
 		if (!this.sessions.delete(session.id)) return;
+		this.leaveCall(session);
 		this.broadcast({ type: "peer-left", sessionId: session.id });
 	}
 
@@ -102,9 +119,20 @@ export class Room {
 					: null;
 				this.broadcast({ type: "peer", peer: session.peer }, session);
 				return;
+			case "call-join":
+			case "call-leave":
+			case "call-signal":
+				return this.handleCall(session, message);
+			case "call-mute":
+				if (!session.call) return;
+				session.call = { ...session.call, muted: message.muted };
+				this.broadcast({ type: "peer", peer: session.peer });
+				return;
 			case "ping":
 				session.send({ type: "pong" });
 				return;
+			case "chat":
+				return this.handleChat(session, message.text);
 		}
 	}
 
@@ -159,6 +187,68 @@ export class Room {
 		this.lastEditorId = session.userId;
 		this.document.trimHistory(HISTORY_IN_MEMORY);
 		this.markDirty();
+	}
+
+	// --- Messagerie de session ----------------------------------------------------------
+
+	private handleChat(session: Session, text: string) {
+		if (!session.allowChatMessage(CHAT_BURST, CHAT_WINDOW)) {
+			session.send({
+				type: "error",
+				code: "rate-limited",
+				message: "Trop de messages, patientez un instant",
+			});
+			return;
+		}
+		const message: ChatMessage = {
+			id: crypto.randomUUID(),
+			userId: session.userId,
+			name: session.name,
+			color: session.color,
+			text,
+			sentAt: new Date().toISOString(),
+		};
+		this.chat.push(message);
+		if (this.chat.length > CHAT_HISTORY) this.chat.shift();
+		// Aussi à l'expéditeur : il affiche le message confirmé (horodatage du serveur).
+		this.broadcast({ type: "chat", message });
+	}
+
+	// --- Appel audio : signalisation ciblée, identifiants non usurpables ------------------
+
+	private handleCall(session: Session, message: CallClientMessage) {
+		switch (message.type) {
+			case "call-join": {
+				const owner = this.callPeers.get(message.peerId);
+				if (owner && owner !== session) return;
+				this.callPeers.set(message.peerId, session);
+				session.call = { peerId: message.peerId, muted: session.call?.muted ?? false };
+				this.broadcast({ type: "peer", peer: session.peer });
+				return;
+			}
+			case "call-leave":
+				if (this.callPeers.get(message.peerId) === session) this.leaveCall(session);
+				return;
+			case "call-signal": {
+				if (this.callPeers.get(message.from) !== session) return;
+				this.callPeers.get(message.to)?.send({
+					type: "call-signal",
+					from: message.from,
+					fromUserId: session.userId,
+					signal: message.signal,
+				});
+				return;
+			}
+		}
+	}
+
+	private leaveCall(session: Session) {
+		if (!session.call) return;
+		const { peerId } = session.call;
+		this.callPeers.delete(peerId);
+		session.call = null;
+		for (const member of this.callPeers.values()) member.send({ type: "call-peer-left", peerId });
+		this.broadcast({ type: "peer", peer: session.peer }, session);
 	}
 
 	// --- Sauvegarde de l'instantané -------------------------------------------------------
