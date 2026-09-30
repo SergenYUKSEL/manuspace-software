@@ -1,4 +1,4 @@
-import type { ManuscriptNode } from "@manuspace/shared";
+import type { ManuscriptNode, NodeColor } from "@manuspace/shared";
 import {
 	ChevronRightIcon,
 	FilePlusIcon,
@@ -23,7 +23,9 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { childrenByParent } from "@/lib/manuscripts";
+import { COLOR_LABELS, tagClass } from "@/lib/node-colors";
 import { cn } from "@/lib/utils";
+import { ColorSwatches } from "./color-swatches";
 import type { NodeAction } from "./node-actions";
 import { NodeIcon } from "./node-icon";
 
@@ -37,12 +39,23 @@ type Props = {
 	onSelect: (nodeId: string | undefined) => void;
 	onAction: (action: NodeAction) => void;
 	onMove: (nodeId: string, parentId: string | null) => void;
+	onColor: (nodeId: string, color: NodeColor | null) => void;
 };
 
-export function NodeTree({ nodes, selectedId, canEdit, onSelect, onAction, onMove }: Props) {
+export function NodeTree({
+	nodes,
+	selectedId,
+	canEdit,
+	onSelect,
+	onAction,
+	onMove,
+	onColor,
+}: Props) {
 	const children = useMemo(() => childrenByParent(nodes), [nodes]);
 	const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 	const [dropTarget, setDropTarget] = useState<string | null>(null);
+	/** Menu d'actions ouvert (bouton « … » ou clic droit sur la ligne). */
+	const [menuFor, setMenuFor] = useState<string | null>(null);
 
 	const toggle = (id: string) =>
 		setCollapsed((prev) => {
@@ -101,12 +114,21 @@ export function NodeTree({ nodes, selectedId, canEdit, onSelect, onAction, onMov
 					{/* biome-ignore lint/a11y/noStaticElementInteractions: glisser-déposer à la souris ; équivalent clavier via « Déplacer vers… » du menu */}
 					<div
 						className={cn(
-							"group flex h-8 items-center gap-1.5 rounded-md pr-1 text-sm hover:bg-muted",
-							node.id === selectedId && "bg-muted font-medium",
+							"group flex h-7 items-center gap-1.5 rounded-md pr-1 text-[13px] hover:bg-accent",
+							node.id === selectedId &&
+								"bg-primary text-primary-foreground hover:bg-primary [&_svg]:text-primary-foreground!",
 							dropTarget === node.id && "ring-2 ring-primary",
 						)}
 						style={{ paddingLeft: `${depth * 14 + 4}px` }}
 						draggable={canEdit}
+						onContextMenu={
+							canEdit
+								? (e) => {
+										e.preventDefault();
+										setMenuFor(node.id);
+									}
+								: undefined
+						}
 						onDragStart={(e) => {
 							e.dataTransfer.setData(DRAG_TYPE, node.id);
 							e.dataTransfer.effectAllowed = "move";
@@ -134,8 +156,24 @@ export function NodeTree({ nodes, selectedId, canEdit, onSelect, onAction, onMov
 							className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:underline"
 							onClick={() => onSelect(node.id)}
 						>
-							<NodeIcon type={node.type} mimeType={node.mimeType} open={isOpen} />
+							<NodeIcon
+								type={node.type}
+								mimeType={node.mimeType}
+								color={node.color}
+								open={isOpen}
+							/>
 							<span className="truncate">{node.name}</span>
+							{node.color && (
+								<span
+									role="img"
+									aria-label={`Couleur : ${COLOR_LABELS[node.color]}`}
+									className={cn(
+										"ml-auto size-2 shrink-0 rounded-full",
+										tagClass[node.color].bg,
+										node.id === selectedId && "ring-1 ring-primary-foreground",
+									)}
+								/>
+							)}
 						</button>
 						{canEdit && (
 							<NodeMenu
@@ -143,6 +181,9 @@ export function NodeTree({ nodes, selectedId, canEdit, onSelect, onAction, onMov
 								targets={moveTargets(node)}
 								onAction={onAction}
 								onMove={onMove}
+								onColor={onColor}
+								open={menuFor === node.id}
+								onOpenChange={(open) => setMenuFor(open ? node.id : null)}
 							/>
 						)}
 					</div>
@@ -177,15 +218,21 @@ function NodeMenu({
 	targets,
 	onAction,
 	onMove,
+	onColor,
+	open,
+	onOpenChange,
 }: {
 	node: ManuscriptNode;
 	/** null = racine du manuscrit */
 	targets: (ManuscriptNode | null)[];
 	onAction: (a: NodeAction) => void;
 	onMove: (nodeId: string, parentId: string | null) => void;
+	onColor: (nodeId: string, color: NodeColor | null) => void;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
 }) {
 	return (
-		<DropdownMenu>
+		<DropdownMenu open={open} onOpenChange={onOpenChange}>
 			<DropdownMenuTrigger
 				render={
 					<Button
@@ -198,7 +245,9 @@ function NodeMenu({
 			>
 				<MoreHorizontalIcon />
 			</DropdownMenuTrigger>
-			<DropdownMenuContent align="start">
+			<DropdownMenuContent align="start" className="min-w-56">
+				<ColorSwatches value={node.color} onChange={(color) => onColor(node.id, color)} />
+				<DropdownMenuSeparator />
 				{node.type === "folder" && (
 					<>
 						<DropdownMenuItem
