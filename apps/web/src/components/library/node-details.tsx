@@ -69,10 +69,21 @@ export function NodeDetails(props: Props) {
 	}
 	if (node?.type === "file") {
 		return (
-			<FileDetails node={node} manuscriptId={manuscriptId} canEdit={canEdit} onAction={onAction} />
+			<div className="p-5">
+				<FileDetails
+					node={node}
+					manuscriptId={manuscriptId}
+					canEdit={canEdit}
+					onAction={onAction}
+				/>
+			</div>
 		);
 	}
-	return <FolderDetails {...props} />;
+	return (
+		<div className="p-5">
+			<FolderDetails {...props} />
+		</div>
+	);
 }
 
 function FolderDetails({ node, items, canEdit, onSelect, onAction, onDropFiles }: Props) {
@@ -158,7 +169,7 @@ function FolderDetails({ node, items, canEdit, onSelect, onAction, onDropFiles }
 											onSelect(item.id);
 										}}
 									>
-										<NodeIcon type={item.type} mimeType={item.mimeType} />
+										<NodeIcon type={item.type} mimeType={item.mimeType} color={item.color} />
 										{item.name}
 									</button>
 								</TableCell>

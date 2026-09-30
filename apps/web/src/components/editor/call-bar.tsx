@@ -1,5 +1,6 @@
 import { MicIcon, MicOffIcon, PhoneIcon, PhoneOffIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { initials } from "@/lib/user-color";
 import type { useCall } from "./use-call";
@@ -15,7 +16,7 @@ export function CallBar({ call }: { call: Call }) {
 				{call.error && <p className="max-w-64 text-xs text-destructive">{call.error}</p>}
 				<Button
 					size="sm"
-					variant={waiting > 0 ? "default" : "outline"}
+					variant={waiting > 0 ? "default" : "ghost"}
 					disabled={call.joining}
 					onClick={call.join}
 					title="Discuter à voix haute pendant la correction ou la co-écriture"
@@ -27,12 +28,13 @@ export function CallBar({ call }: { call: Call }) {
 		);
 	}
 
-	return (
+	// Portail : un ancêtre avec backdrop-filter (barre d'outils) piégerait le position: fixed.
+	return createPortal(
 		<section
 			aria-label="Appel en cours"
-			className="flex items-center gap-2 rounded-full border bg-emerald-50 py-1 pr-1 pl-3 dark:bg-emerald-950/40"
+			className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover/90 py-1 pr-1 pl-3 shadow-[var(--shadow-window)] backdrop-blur-xl"
 		>
-			<span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">En appel</span>
+			<span className="text-xs font-medium text-foreground">En appel</span>
 			<ul className="flex -space-x-1.5" aria-label="Participants">
 				{call.others.map((p) => (
 					<li
@@ -72,7 +74,8 @@ export function CallBar({ call }: { call: Call }) {
 			{[...call.remoteStreams].map(([peerId, stream]) => (
 				<RemoteAudio key={peerId} stream={stream} />
 			))}
-		</section>
+		</section>,
+		document.body,
 	);
 }
 

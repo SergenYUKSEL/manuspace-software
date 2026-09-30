@@ -1,9 +1,15 @@
-import { countWords, type ManuscriptNode, type PeerState } from "@manuspace/shared";
+import {
+	countWords,
+	type DocumentVersion,
+	type ManuscriptNode,
+	type PeerState,
+} from "@manuspace/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import {
 	BookOpenIcon,
 	CloudIcon,
 	CloudOffIcon,
+	HistoryIcon,
 	LoaderIcon,
 	LockIcon,
 	MessageSquareIcon,
@@ -11,6 +17,8 @@ import {
 	TriangleAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { SegmentedControl } from "@/components/segmented-control";
 import { Button } from "@/components/ui/button";
 import { formatUpdatedAt, wordCountLabel } from "@/lib/manuscripts";
 import { initials } from "@/lib/user-color";
@@ -19,9 +27,11 @@ import { ChatPanel } from "./chat-panel";
 import type { ConnectionSnapshot } from "./collab-connection";
 import { CollabTextarea, type CollabTextareaHandle } from "./collab-textarea";
 import { EditorToolbar } from "./editor-toolbar";
+import { HistoryPanel } from "./history-panel";
 import { MarkdownView } from "./markdown-view";
 import { useCall } from "./use-call";
 import { useCollabDocument } from "./use-collab-document";
+import { VersionView } from "./version-view";
 
 type Props = {
 	node: ManuscriptNode;
@@ -71,6 +81,7 @@ export function ManuscriptEditor({ node, manuscriptId, user, canEdit }: Props) {
 		<LoadedEditor
 			key={node.id}
 			node={node}
+			manuscriptId={manuscriptId}
 			connection={connection}
 			snapshot={snapshot}
 			userId={user.id}
@@ -81,12 +92,14 @@ export function ManuscriptEditor({ node, manuscriptId, user, canEdit }: Props) {
 
 function LoadedEditor({
 	node,
+	manuscriptId,
 	connection,
 	snapshot,
 	userId,
 	canEdit,
 }: {
 	node: ManuscriptNode;
+	manuscriptId: string;
 	connection: NonNullable<ReturnType<typeof useCollabDocument>["connection"]>;
 	snapshot: ConnectionSnapshot;
 	userId: string;
@@ -98,7 +111,13 @@ function LoadedEditor({
 	const textarea = useRef<CollabTextareaHandle>(null);
 	const call = useCall(connection, snapshot);
 	const onTextChange = useCallback((value: string) => setText(value), []);
-	const [chatOpen, setChatOpen] = useState(false);
+	/** Un seul panneau latéral à la fois. */
+	const [panel, setPanel] = useState<"chat" | "history" | null>(null);
+	const chatOpen = panel === "chat";
+	const togglePanel = (name: "chat" | "history") =>
+		setPanel((current) => (current === name ? null : name));
+	/** Version passée affichée à la place du texte (la zone d'écriture reste montée). */
+	const [preview, setPreview] = useState<DocumentVersion | null>(null);
 	/** Messages déjà vus : ceux des autres arrivés depuis, panneau fermé, sont « non lus ». */
 	const [seen, setSeen] = useState(snapshot.chat.length);
 	useEffect(() => {
@@ -107,76 +126,91 @@ function LoadedEditor({
 	const unread = snapshot.chat.slice(seen).filter((m) => m.userId !== userId).length;
 
 	return (
-		<div className="grid gap-3">
-			<header className="flex flex-wrap items-end justify-between gap-3">
-				<div>
-					<h2 className="font-serif text-2xl">{node.name}</h2>
-					<p className="mt-1 text-sm text-muted-foreground">
-						{wordCountLabel(countWords(text))}
-						{node.updatedBy && (
-							<>
-								{" "}
-								· modifié {formatUpdatedAt(node.updatedAt)} par {node.updatedBy.displayName}
-							</>
-						)}
-					</p>
-				</div>
-				<div className="flex flex-wrap items-center gap-3">
-					<Button
-						size="sm"
-						variant={chatOpen ? "secondary" : "outline"}
-						aria-pressed={chatOpen}
-						onClick={() => setChatOpen((open) => !open)}
-					>
-						<MessageSquareIcon />
-						Discussion
-						{unread > 0 && (
-							<span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
-								<span className="sr-only">, messages non lus : </span>
-								{unread}
-							</span>
-						)}
-					</Button>
-					<CallBar call={call} />
-					<Presence peers={snapshot.peers} myId={userId} />
-					<SaveStatus snapshot={snapshot} editable={editable} />
-				</div>
-			</header>
-
-			<div className={chatOpen ? "grid gap-3 lg:grid-cols-[1fr_18rem]" : "grid"}>
-				<div className="overflow-hidden rounded-xl border bg-card">
-					<div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-2 py-1.5">
-						{editable && mode === "write" ? (
-							<EditorToolbar onCommand={(command) => textarea.current?.run(command)} />
-						) : (
-							<span className="px-2 text-xs text-muted-foreground">
-								{editable ? "Aperçu de la mise en page" : "Lecture"}
-							</span>
-						)}
-						{editable && (
-							<fieldset className="flex rounded-md border p-0.5">
-								<legend className="sr-only">Mode d'affichage</legend>
-								<Button
-									size="xs"
-									variant={mode === "write" ? "secondary" : "ghost"}
-									aria-pressed={mode === "write"}
-									onClick={() => setMode("write")}
-								>
-									<PenLineIcon /> Écrire
-								</Button>
-								<Button
-									size="xs"
-									variant={mode === "read" ? "secondary" : "ghost"}
-									aria-pressed={mode === "read"}
-									onClick={() => setMode("read")}
-								>
-									<BookOpenIcon /> Lecture
-								</Button>
-							</fieldset>
-						)}
+		<div className="flex h-full flex-col">
+			<div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b bg-background/80 px-4 py-1.5 backdrop-blur-xl">
+				<div className="min-w-48 flex-1">
+					<h2 className="truncate text-[13px] font-semibold">{node.name}</h2>
+					<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+						<span className="truncate">
+							{wordCountLabel(countWords(text))}
+							{node.updatedBy && (
+								<>
+									{" "}
+									· modifié {formatUpdatedAt(node.updatedAt)} par {node.updatedBy.displayName}
+								</>
+							)}
+						</span>
+						<SaveStatus snapshot={snapshot} editable={editable} />
 					</div>
+				</div>
+				{editable && mode === "write" && !preview && (
+					<EditorToolbar onCommand={(command) => textarea.current?.run(command)} />
+				)}
+				{editable && (
+					<SegmentedControl
+						label="Mode d'affichage"
+						value={mode}
+						onChange={setMode}
+						options={[
+							{ value: "write", label: "Écrire", icon: PenLineIcon },
+							{ value: "read", label: "Lecture", icon: BookOpenIcon },
+						]}
+					/>
+				)}
+				<Presence peers={snapshot.peers} myId={userId} />
+				<CallBar call={call} />
+				<Button
+					size="sm"
+					variant={chatOpen ? "secondary" : "ghost"}
+					aria-pressed={chatOpen}
+					title="Discussion de la session"
+					onClick={() => togglePanel("chat")}
+				>
+					<MessageSquareIcon />
+					<span className="max-2xl:sr-only">Discussion</span>
+					{unread > 0 && (
+						<span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+							<span className="sr-only">, messages non lus : </span>
+							{unread}
+						</span>
+					)}
+				</Button>
+				<Button
+					size="sm"
+					variant={panel === "history" ? "secondary" : "ghost"}
+					aria-pressed={panel === "history"}
+					title="Historique des versions"
+					onClick={() => {
+						togglePanel("history");
+						setPreview(null);
+					}}
+				>
+					<HistoryIcon />
+					<span className="max-2xl:sr-only">Historique</span>
+				</Button>
+			</div>
+
+			<div className="flex min-h-0 flex-1">
+				<div className="relative min-w-0 flex-1 overflow-y-auto">
+					{preview && (
+						<VersionView
+							key={preview.revision}
+							manuscriptId={manuscriptId}
+							nodeId={node.id}
+							version={preview}
+							currentText={text}
+							canRestore={editable}
+							onRestore={(versionText) => {
+								textarea.current?.replaceAll(versionText);
+								setPreview(null);
+								setMode("write");
+								toast.success("Version restaurée. ⌘Z pour annuler.");
+							}}
+							onClose={() => setPreview(null)}
+						/>
+					)}
 					{/* La zone de texte reste montée en mode Lecture : ses opérations et sa sélection sont conservées. */}
-					<div hidden={mode !== "write"}>
+					<div hidden={mode !== "write" || preview !== null} className="h-full">
 						<CollabTextarea
 							ref={textarea}
 							connection={connection}
@@ -186,21 +220,37 @@ function LoadedEditor({
 							onTextChange={onTextChange}
 						/>
 					</div>
-					{mode === "read" && (
-						<article className="manuscript-prose max-h-[70vh] overflow-y-auto">
+					{mode === "read" && !preview && (
+						<article className="manuscript-prose">
 							<MarkdownView source={text} />
 						</article>
 					)}
 				</div>
-				{chatOpen && (
-					<ChatPanel
-						connection={connection}
-						messages={snapshot.chat}
-						error={snapshot.chatError}
-						connected={snapshot.status === "connected"}
-						myId={userId}
-						onClose={() => setChatOpen(false)}
-					/>
+				{panel && (
+					<div className="fixed inset-x-0 bottom-0 z-30 h-[70dvh] overflow-hidden rounded-t-2xl shadow-[var(--shadow-window)] md:static md:h-auto md:w-80 md:rounded-none md:border-l md:shadow-none">
+						{chatOpen && (
+							<ChatPanel
+								connection={connection}
+								messages={snapshot.chat}
+								error={snapshot.chatError}
+								connected={snapshot.status === "connected"}
+								myId={userId}
+								onClose={() => setPanel(null)}
+							/>
+						)}
+						{panel === "history" && (
+							<HistoryPanel
+								manuscriptId={manuscriptId}
+								nodeId={node.id}
+								selected={preview?.revision ?? null}
+								onSelect={setPreview}
+								onClose={() => {
+									setPanel(null);
+									setPreview(null);
+								}}
+							/>
+						)}
+					</div>
 				)}
 			</div>
 		</div>
@@ -246,8 +296,8 @@ function SaveStatus({ snapshot, editable }: { snapshot: ConnectionSnapshot; edit
 				? (["Enregistrement…", LoaderIcon, "text-muted-foreground"] as const)
 				: (["Enregistré", CloudIcon, "text-muted-foreground"] as const);
 	return (
-		<p role="status" aria-live="polite" className={`flex items-center gap-1.5 text-sm ${tone}`}>
-			<Icon className="size-4" />
+		<p role="status" aria-live="polite" className={`flex items-center gap-1 ${tone}`}>
+			<Icon className="size-3" />
 			{label}
 		</p>
 	);

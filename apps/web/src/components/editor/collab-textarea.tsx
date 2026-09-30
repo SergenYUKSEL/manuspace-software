@@ -31,7 +31,11 @@ const NAVIGATION_KEYS = new Set([
 	"PageDown",
 ]);
 
-export type CollabTextareaHandle = { run: (command: FormatCommand) => void };
+export type CollabTextareaHandle = {
+	run: (command: FormatCommand) => void;
+	/** Remplace tout le texte (restauration d'une version) : une modification OT normale, annulable. */
+	replaceAll: (text: string) => void;
+};
 
 type Props = {
 	connection: CollabConnection;
@@ -153,7 +157,15 @@ export const CollabTextarea = forwardRef<CollabTextareaHandle, Props>(function C
 		},
 		[applyEdit, connection, readOnly, runUndo],
 	);
-	useImperativeHandle(ref, () => ({ run }), [run]);
+	const replaceAll = useCallback(
+		(next: string) => {
+			if (readOnly) return;
+			commit(next, next.length, false);
+			display(connection.text, 0, 0);
+		},
+		[commit, connection, display, readOnly],
+	);
+	useImperativeHandle(ref, () => ({ run, replaceAll }), [run, replaceAll]);
 
 	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (NAVIGATION_KEYS.has(event.key)) undo.current.breakGroup();
@@ -182,7 +194,7 @@ export const CollabTextarea = forwardRef<CollabTextareaHandle, Props>(function C
 	};
 
 	return (
-		<div className="relative">
+		<div className="relative h-full">
 			<textarea
 				ref={textarea}
 				aria-label={label}

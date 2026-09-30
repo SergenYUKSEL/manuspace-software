@@ -33,7 +33,7 @@ export function ChatPanel({ connection, messages, error, connected, myId, onClos
 	return (
 		<aside
 			aria-label="Discussion de la session"
-			className="flex h-full min-h-80 flex-col rounded-xl border bg-card"
+			className="flex h-full min-h-80 flex-col bg-sidebar backdrop-blur-2xl"
 		>
 			<header className="flex items-center justify-between border-b px-3 py-2">
 				<h3 className="text-sm font-medium">Discussion</h3>
