@@ -11,7 +11,7 @@ apps/
             En production : servi par Caddy, qui relaie /api vers l'API (Caddyfile).
   api/      Serveur 1 — API métier (Bun + Hono) : auth, 2FA, manuscrits, fichiers, admin.
   collab/   Serveur 2 — temps réel (WebSocket Bun maison) : autorité OT de l'édition
-            collaborative, présence, curseurs.
+            collaborative, présence, curseurs, signalisation WebRTC.
 packages/
   shared/   Algorithme OT (TextOperation, client, autorité serveur), Markdown léger,
             protocole WebSocket, schémas Zod et rôles partagés front / api / collab
@@ -61,9 +61,10 @@ Ouvrir http://localhost:5173 (Vite redirige `/api` vers l'API).
 | `bun dev` | Lance les 3 apps en mode watch |
 | `bun typecheck` | Vérifie les types de tous les packages |
 | `bun lint` / `bun format` | Biome (lint + format) |
-| `bun test` | Tests d'intégration (une base de test par paquet, créée et migrée automatiquement, nécessite `bun infra:up`) |
+| `bun run test` | Tests unitaires et d'intégration (une base de test par paquet, créée et migrée automatiquement, nécessite `bun infra:up`) |
 | `bun db:generate` | Génère une migration après modification de `packages/db/src/schema.ts` |
 | `bun db:migrate` | Applique les migrations |
+| `bun run --cwd apps/collab smoke` | Test de bout en bout du serveur collab (serveurs lancés) |
 
 ## Authentification
 
@@ -118,7 +119,32 @@ Contrainte du projet : ni Yjs/CRDT, ni bibliothèque de synchronisation, ni édi
   cache privé). Chaque remplacement crée un nouvel objet S3 et supprime l'ancien.
 - La suppression d'un manuscrit supprime ses objets du bucket.
 
+## Messagerie de session
+
+- Bouton « Discussion » dans l'éditeur : échanges rapides entre les personnes présentes sur le
+  document (bêta-lecteurs compris), avec compteur de messages non lus.
+- Messages en texte brut (jamais interprétés comme du HTML), 2 000 caractères maximum,
+  anti-inondation côté serveur (10 messages par 10 s). Historique conservé tant que la session
+  d'édition est ouverte.
+
+## Appel audio
+
+- Sur chaque document, bouton « Appel » : les personnes présentes démarrent ou rejoignent l'appel
+  (plusieurs participants, bêta-lecteurs compris), coupent leur micro ou raccrochent.
+- WebRTC en maillage (chaque participant est relié aux autres, adapté à 2-4 personnes). L'audio
+  passe directement entre navigateurs, ou par un relais TURN quand c'est impossible.
+- **Signalisation par le serveur collab** (messages sur le WebSocket déjà authentifié du document) : chaque message est remis à son seul destinataire (les SDP contiennent des
+  adresses réseau), l'expéditeur ne peut pas usurper l'identifiant d'un autre participant, et le
+  serveur annonce les départs (y compris une déconnexion brutale).
+- Pas de collision de négociation : pour chaque paire, le plus petit identifiant envoie l'offre.
+- Résilience : l'appel survit à un redémarrage du serveur collab (seule la signalisation en dépend).
+- Serveurs ICE fournis par l'API (`GET /api/rtc/ice-servers`) : STUN public, plus TURN si
+  `TURN_URLS`, `TURN_USERNAME` et `TURN_CREDENTIAL` sont définis. En production : relais Metered
+  (Railway ne gère pas l'UDP).
+
 ## Déploiement (Railway)
+
+Production : **https://manuspace.up.railway.app** (collab : `wss://manuspace-collab.up.railway.app`).
 
 L'infrastructure est décrite en code dans `.railway/railway.ts` : services `web`, `api` et `collab`
 (Dockerfiles), Postgres, bucket S3 et variables. Les secrets ne sont pas dans le dépôt
@@ -140,3 +166,4 @@ railway up --service web --ci     # front (Caddy)
   permanent des fichiers hachés de Vite.
 - Premier administrateur en production :
   `railway ssh --service api -- bun scripts/create-admin.ts <email> "<Nom>"`
+- Appels audio : relais TURN externe (Metered), identifiants dans les variables du service `api`.
