@@ -1,6 +1,7 @@
 export * from "./call";
 export * from "./collab-protocol";
 export * from "./colors";
+export * from "./line-diff";
 export * from "./markdown";
 export * from "./ot/client";
 export * from "./ot/server-document";
