@@ -69,6 +69,7 @@ export async function listNodes(manuscriptId: string): Promise<ManuscriptNode[]>
 		parentId: node.parentId,
 		type: node.type,
 		name: node.name,
+		color: node.color as ManuscriptNode["color"],
 		position: node.position,
 		wordCount: node.wordCount,
 		mimeType: node.mimeType,

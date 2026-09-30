@@ -1,7 +1,13 @@
 # Manuspace
 
+[![CI](https://github.com/SergenYUKSEL/manuspace-software/actions/workflows/ci.yml/badge.svg)](https://github.com/SergenYUKSEL/manuspace-software/actions/workflows/ci.yml)
+
 Espace cloud pour auteurs : organiser ses romans, écrire ses chapitres, stocker ses ressources et
 collaborer en temps réel (co-écriture, correction, appel audio).
+
+> **Dossier des choix techniques et organisationnels** : [`docs/choix-techniques.md`](docs/choix-techniques.md)
+> ou [PDF](docs/choix-techniques.pdf) (architecture, algorithme de collaboration, sécurité, résilience,
+> tests, limites). Régénérer le PDF après modification : `bun run docs:pdf`.
 
 ## Architecture
 
@@ -105,10 +111,14 @@ Contrainte du projet : ni Yjs/CRDT, ni bibliothèque de synchronisation, ni édi
   d'écriture (calque miroir).
 - **Tests** : propriétés OT sur des milliers de cas aléatoires, simulation de clients
   concurrents avec coupures et messages perdus (convergence vérifiée), tests d'intégration du
-  serveur.
+  serveur, et `bun run e2e:editor` (deux navigateurs : frappe simultanée, annulation, coupure
+  réseau ; `E2E_KILL_COLLAB=1` pour un arrêt du serveur avec rechargement de la page).
 
 ## Fichiers (PDF, images)
 
+- **Couleurs** façon tags du Finder (7 couleurs) sur les dossiers et fichiers, partagées entre
+  collaborateurs ; les modifier ne change pas le « dernier éditeur ».
+- **Apparence** : interface façon macOS, clair ou sombre selon le système, ou forcé dans Mon compte.
 - Import, aperçu, téléchargement, remplacement et suppression des ressources d'un manuscrit
   (cartes, recherches, couvertures…), dans n'importe quel dossier, y compris par glisser-déposer.
 - L'upload passe par l'API, qui vérifie **avant stockage** la taille (20 Mo max) et le **type réel**
@@ -118,6 +128,21 @@ Contrainte du projet : ni Yjs/CRDT, ni bibliothèque de synchronisation, ni édi
 - Le contenu est servi par l'API après vérification du rôle (`nosniff`, type détecté à l'import,
   cache privé). Chaque remplacement crée un nouvel objet S3 et supprime l'ancien.
 - La suppression d'un manuscrit supprime ses objets du bucket.
+
+## Historique des versions
+
+- Bouton « Historique » dans l'éditeur : les versions du chapitre, une par session d'écriture
+  (pause de plus de 10 minutes), avec date, auteurs et nombre de modifications.
+- Aperçu d'une version, comparaison paragraphe par paragraphe avec le texte actuel, et
+  restauration (appliquée comme une modification normale : visible en direct, annulable).
+- Reconstruction à partir du journal d'opérations, sans stockage supplémentaire.
+
+## Corbeille
+
+- Supprimer un élément le place dans la corbeille du manuscrit (notification avec « Annuler »).
+- La corbeille liste chaque suppression comme un lot (un dossier et son contenu) : restauration
+  à l'emplacement d'origine (ou à la racine si le dossier n'existe plus), suppression définitive
+  ou vidage (auteur principal, fichiers du bucket compris), purge automatique après 30 jours.
 
 ## Messagerie de session
 
@@ -140,7 +165,10 @@ Contrainte du projet : ni Yjs/CRDT, ni bibliothèque de synchronisation, ni édi
 - Résilience : l'appel survit à un redémarrage du serveur collab (seule la signalisation en dépend).
 - Serveurs ICE fournis par l'API (`GET /api/rtc/ice-servers`) : STUN public, plus TURN si
   `TURN_URLS`, `TURN_USERNAME` et `TURN_CREDENTIAL` sont définis. En production : relais Metered
-  (Railway ne gère pas l'UDP).
+  (Railway ne gère pas l'UDP), vérifié avec `E2E_FORCE_RELAY=1` (connexions directes interdites).
+- Test de bout en bout (deux navigateurs, micro simulé, niveau sonore mesuré à la réception) :
+  `bun run e2e:call` (voir l'en-tête de `e2e/call.e2e.ts`), avec `E2E_KILL_COLLAB=1` pour
+  vérifier que l'appel continue pendant une coupure du serveur collab.
 
 ## Déploiement (Railway)
 
