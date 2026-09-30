@@ -10,6 +10,14 @@ const envSchema = z.object({
 	TOTP_ENCRYPTION_KEY: z
 		.base64()
 		.refine((v) => Buffer.from(v, "base64").length === 32, "32 octets attendus"),
+	/**
+	 * Serveur(s) TURN pour les appels audio (relais quand la connexion directe est impossible :
+	 * box, réseaux d'entreprise). Optionnel : sans TURN, seul le STUN public est utilisé.
+	 * Ex. : "turn:global.relay.metered.ca:80,turns:global.relay.metered.ca:443?transport=tcp"
+	 */
+	TURN_URLS: z.string().optional(),
+	TURN_USERNAME: z.string().optional(),
+	TURN_CREDENTIAL: z.string().optional(),
 	S3_ENDPOINT: z.url(),
 	S3_BUCKET: z.string().min(1),
 	S3_ACCESS_KEY_ID: z.string().min(1),

@@ -11,6 +11,7 @@ import { documents } from "./routes/documents";
 import { fileRoutes } from "./routes/files";
 import { health } from "./routes/health";
 import { manuscriptRoutes } from "./routes/manuscripts";
+import { rtc } from "./routes/rtc";
 
 const api = new Hono()
 	.route("/health", health)
@@ -19,7 +20,8 @@ const api = new Hono()
 	.route("/admin", admin)
 	.route("/documents", documents)
 	.route("/manuscripts", manuscriptRoutes)
-	.route("/manuscripts", fileRoutes);
+	.route("/manuscripts", fileRoutes)
+	.route("/rtc", rtc);
 
 /** Type de l'API, importé par le front pour le client RPC typé (`hono/client`). */
 export type Api = typeof api;

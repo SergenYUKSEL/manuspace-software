@@ -71,6 +71,10 @@ export default defineRailway(() => {
 			S3_BUCKET: preserve(),
 			S3_ACCESS_KEY_ID: preserve(),
 			S3_SECRET_ACCESS_KEY: preserve(),
+			// Relais TURN des appels audio (fournisseur externe : Railway ne gère pas l'UDP).
+			TURN_URLS: preserve(),
+			TURN_USERNAME: preserve(),
+			TURN_CREDENTIAL: preserve(),
 			// Bucket Railway : région "auto" et URLs https://<bucket>.<endpoint>.
 			S3_REGION: "auto",
 			S3_VIRTUAL_HOSTED_STYLE: "true",
