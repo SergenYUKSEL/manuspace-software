@@ -1,4 +1,7 @@
 import {
+	type CallClientMessage,
+	type CallServerMessage,
+	type ChatMessage,
 	type CollabClientMessage,
 	type CollabServerMessage,
 	OTClient,
@@ -20,9 +23,14 @@ export type ConnectionSnapshot = {
 	sessionId: string | null;
 	peers: PeerState[];
 	error: string | null;
+	/** Messagerie de la session d'édition (plus récents à la fin). */
+	chat: ChatMessage[];
+	/** Dernier refus d'envoi d'un message (anti-inondation). */
+	chatError: string | null;
 };
 
 type RemoteListener = (operation: TextOperation) => void;
+type CallListener = (message: CallServerMessage) => void;
 
 /** Ping régulier ; sans aucun message du serveur pendant SILENCE_LIMIT, la connexion est morte. */
 const PING_INTERVAL = 10_000;
@@ -56,9 +64,13 @@ export class CollabConnection {
 		sessionId: null,
 		peers: [],
 		error: null,
+		chat: [],
+		chatError: null,
 	};
 	private readonly listeners = new Set<() => void>();
 	private readonly remoteListeners = new Set<RemoteListener>();
+	private readonly callListeners = new Set<CallListener>();
+	private readonly readyListeners = new Set<() => void>();
 
 	constructor(
 		readonly documentId: string,
@@ -81,6 +93,19 @@ export class CollabConnection {
 		this.remoteListeners.add(listener);
 		return () => {
 			this.remoteListeners.delete(listener);
+		};
+	}
+	onCall(listener: CallListener) {
+		this.callListeners.add(listener);
+		return () => {
+			this.callListeners.delete(listener);
+		};
+	}
+	/** Chaque (re)connexion réussie (ex. se réinscrire à l'appel). */
+	onReady(listener: () => void) {
+		this.readyListeners.add(listener);
+		return () => {
+			this.readyListeners.delete(listener);
 		};
 	}
 
@@ -225,6 +250,17 @@ export class CollabConnection {
 					this.update({ error: "Vous n'avez plus accès à ce document, ou il a été supprimé." });
 				}
 				if (message.code === "desync") this.ot = null; // Repartir du texte du serveur.
+				if (message.code === "rate-limited") this.update({ chatError: message.message });
+				return;
+			case "chat":
+				this.update({
+					chat: [...this.snapshot.chat, message.message].slice(-200),
+					chatError: null,
+				});
+				return;
+			case "call-signal":
+			case "call-peer-left":
+				for (const listener of this.callListeners) listener(message);
 				return;
 			case "pong":
 				return;
@@ -264,8 +300,10 @@ export class CollabConnection {
 			sessionId: message.sessionId,
 			peers: message.peers,
 			error: null,
+			chat: message.chat,
 		});
 		this.afterChange();
+		for (const listener of this.readyListeners) listener();
 	}
 
 	/** Réponse incohérente (message perdu) : on repart proprement d'une nouvelle connexion. */
@@ -338,5 +376,21 @@ export class CollabConnection {
 		const clamp = (n: number) =>
 			Math.min(Math.max(0, this.ot?.transformIndexFromServer(n) ?? n), this.text.length);
 		return { anchor: clamp(anchor), head: clamp(head) };
+	}
+
+	// --- Messagerie de session -------------------------------------------------------------
+
+	/** Envoie un message ; il s'affiche quand le serveur le renvoie (horodaté, confirmé). */
+	sendChat(text: string) {
+		const trimmed = text.trim();
+		if (!trimmed || this.snapshot.status !== "connected") return false;
+		this.send({ type: "chat", text: trimmed });
+		return true;
+	}
+
+	// --- Appel audio ----------------------------------------------------------------------
+
+	sendCall(message: CallClientMessage | { type: "call-mute"; muted: boolean }) {
+		this.send(message);
 	}
 }

@@ -6,6 +6,7 @@ import {
 	CloudOffIcon,
 	LoaderIcon,
 	LockIcon,
+	MessageSquareIcon,
 	PenLineIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
@@ -13,10 +14,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { formatUpdatedAt, wordCountLabel } from "@/lib/manuscripts";
 import { initials } from "@/lib/user-color";
+import { CallBar } from "./call-bar";
+import { ChatPanel } from "./chat-panel";
 import type { ConnectionSnapshot } from "./collab-connection";
 import { CollabTextarea, type CollabTextareaHandle } from "./collab-textarea";
 import { EditorToolbar } from "./editor-toolbar";
 import { MarkdownView } from "./markdown-view";
+import { useCall } from "./use-call";
 import { useCollabDocument } from "./use-collab-document";
 
 type Props = {
@@ -92,7 +96,15 @@ function LoadedEditor({
 	const [mode, setMode] = useState<"write" | "read">(editable ? "write" : "read");
 	const [text, setText] = useState(connection.text);
 	const textarea = useRef<CollabTextareaHandle>(null);
+	const call = useCall(connection, snapshot);
 	const onTextChange = useCallback((value: string) => setText(value), []);
+	const [chatOpen, setChatOpen] = useState(false);
+	/** Messages déjà vus : ceux des autres arrivés depuis, panneau fermé, sont « non lus ». */
+	const [seen, setSeen] = useState(snapshot.chat.length);
+	useEffect(() => {
+		if (chatOpen) setSeen(snapshot.chat.length);
+	}, [chatOpen, snapshot.chat.length]);
+	const unread = snapshot.chat.slice(seen).filter((m) => m.userId !== userId).length;
 
 	return (
 		<div className="grid gap-3">
@@ -110,57 +122,85 @@ function LoadedEditor({
 					</p>
 				</div>
 				<div className="flex flex-wrap items-center gap-3">
+					<Button
+						size="sm"
+						variant={chatOpen ? "secondary" : "outline"}
+						aria-pressed={chatOpen}
+						onClick={() => setChatOpen((open) => !open)}
+					>
+						<MessageSquareIcon />
+						Discussion
+						{unread > 0 && (
+							<span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
+								<span className="sr-only">, messages non lus : </span>
+								{unread}
+							</span>
+						)}
+					</Button>
+					<CallBar call={call} />
 					<Presence peers={snapshot.peers} myId={userId} />
 					<SaveStatus snapshot={snapshot} editable={editable} />
 				</div>
 			</header>
 
-			<div className="overflow-hidden rounded-xl border bg-card">
-				<div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-2 py-1.5">
-					{editable && mode === "write" ? (
-						<EditorToolbar onCommand={(command) => textarea.current?.run(command)} />
-					) : (
-						<span className="px-2 text-xs text-muted-foreground">
-							{editable ? "Aperçu de la mise en page" : "Lecture"}
-						</span>
-					)}
-					{editable && (
-						<fieldset className="flex rounded-md border p-0.5">
-							<legend className="sr-only">Mode d'affichage</legend>
-							<Button
-								size="xs"
-								variant={mode === "write" ? "secondary" : "ghost"}
-								aria-pressed={mode === "write"}
-								onClick={() => setMode("write")}
-							>
-								<PenLineIcon /> Écrire
-							</Button>
-							<Button
-								size="xs"
-								variant={mode === "read" ? "secondary" : "ghost"}
-								aria-pressed={mode === "read"}
-								onClick={() => setMode("read")}
-							>
-								<BookOpenIcon /> Lecture
-							</Button>
-						</fieldset>
+			<div className={chatOpen ? "grid gap-3 lg:grid-cols-[1fr_18rem]" : "grid"}>
+				<div className="overflow-hidden rounded-xl border bg-card">
+					<div className="flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-2 py-1.5">
+						{editable && mode === "write" ? (
+							<EditorToolbar onCommand={(command) => textarea.current?.run(command)} />
+						) : (
+							<span className="px-2 text-xs text-muted-foreground">
+								{editable ? "Aperçu de la mise en page" : "Lecture"}
+							</span>
+						)}
+						{editable && (
+							<fieldset className="flex rounded-md border p-0.5">
+								<legend className="sr-only">Mode d'affichage</legend>
+								<Button
+									size="xs"
+									variant={mode === "write" ? "secondary" : "ghost"}
+									aria-pressed={mode === "write"}
+									onClick={() => setMode("write")}
+								>
+									<PenLineIcon /> Écrire
+								</Button>
+								<Button
+									size="xs"
+									variant={mode === "read" ? "secondary" : "ghost"}
+									aria-pressed={mode === "read"}
+									onClick={() => setMode("read")}
+								>
+									<BookOpenIcon /> Lecture
+								</Button>
+							</fieldset>
+						)}
+					</div>
+					{/* La zone de texte reste montée en mode Lecture : ses opérations et sa sélection sont conservées. */}
+					<div hidden={mode !== "write"}>
+						<CollabTextarea
+							ref={textarea}
+							connection={connection}
+							readOnly={!editable}
+							peers={snapshot.peers}
+							label={`Texte de ${node.name}`}
+							onTextChange={onTextChange}
+						/>
+					</div>
+					{mode === "read" && (
+						<article className="manuscript-prose max-h-[70vh] overflow-y-auto">
+							<MarkdownView source={text} />
+						</article>
 					)}
 				</div>
-				{/* La zone de texte reste montée en mode Lecture : ses opérations et sa sélection sont conservées. */}
-				<div hidden={mode !== "write"}>
-					<CollabTextarea
-						ref={textarea}
+				{chatOpen && (
+					<ChatPanel
 						connection={connection}
-						readOnly={!editable}
-						peers={snapshot.peers}
-						label={`Texte de ${node.name}`}
-						onTextChange={onTextChange}
+						messages={snapshot.chat}
+						error={snapshot.chatError}
+						connected={snapshot.status === "connected"}
+						myId={userId}
+						onClose={() => setChatOpen(false)}
 					/>
-				</div>
-				{mode === "read" && (
-					<article className="manuscript-prose max-h-[70vh] overflow-y-auto">
-						<MarkdownView source={text} />
-					</article>
 				)}
 			</div>
 		</div>

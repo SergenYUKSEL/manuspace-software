@@ -10,6 +10,8 @@ const EMPTY: ConnectionSnapshot = {
 	sessionId: null,
 	peers: [],
 	error: null,
+	chat: [],
+	chatError: null,
 };
 
 /** Connexion collaborative d'un document, recréée à chaque changement de document. */
