@@ -63,11 +63,19 @@ export const createNodeSchema = z.object({
 	name: nodeName,
 });
 
-/** Renommage et/ou déplacement (parentId null = racine du manuscrit). */
+/** Couleurs façon tags du Finder, partagées entre collaborateurs. */
+export const NODE_COLORS = ["red", "orange", "yellow", "green", "blue", "purple", "gray"] as const;
+export const nodeColorSchema = z.enum(NODE_COLORS);
+export type NodeColor = z.infer<typeof nodeColorSchema>;
+
+/** Renommage, déplacement (parentId null = racine) et/ou couleur (null = aucune). */
 export const updateNodeSchema = z
-	.object({ name: nodeName, parentId: z.uuid().nullable() })
+	.object({ name: nodeName, parentId: z.uuid().nullable(), color: nodeColorSchema.nullable() })
 	.partial()
-	.refine((v) => v.name !== undefined || v.parentId !== undefined, "Rien à modifier");
+	.refine(
+		(v) => v.name !== undefined || v.parentId !== undefined || v.color !== undefined,
+		"Rien à modifier",
+	);
 
 export const inviteMemberSchema = z.object({ email, role: memberRole });
 export const updateMemberSchema = z.object({ role: memberRole });
@@ -87,12 +95,37 @@ export type ManuscriptNode = {
 	parentId: string | null;
 	type: NodeType;
 	name: string;
+	color: NodeColor | null;
 	position: number;
 	wordCount: number | null;
 	mimeType: string | null;
 	sizeBytes: number | null;
 	updatedAt: string;
 	updatedBy: { id: string; displayName: string } | null;
+};
+
+/** Version d'un document : une session d'écriture (opérations rapprochées dans le temps). */
+export type DocumentVersion = {
+	/** Révision à la fin de la session : le texte de la version est celui à cette révision. */
+	revision: number;
+	startedAt: string;
+	endedAt: string;
+	authors: { id: string; displayName: string }[];
+	operationCount: number;
+};
+
+/** Entrée de la corbeille : un élément supprimé et tout ce qui est parti avec lui. */
+export type TrashEntry = {
+	id: string;
+	type: NodeType;
+	name: string;
+	mimeType: string | null;
+	/** Éléments supprimés en même temps à l'intérieur (dossier). */
+	containedCount: number;
+	deletedAt: string;
+	deletedBy: { id: string; displayName: string } | null;
+	/** Emplacement de restauration : dossier d'origine s'il existe encore, sinon la racine. */
+	restoreTo: { id: string; name: string } | null;
 };
 
 export type ManuscriptMember = {

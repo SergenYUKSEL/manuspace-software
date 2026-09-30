@@ -1,0 +1,2 @@
+ALTER TABLE "nodes" ADD COLUMN "color" text;--> statement-breakpoint
+ALTER TABLE "nodes" ADD CONSTRAINT "nodes_color_check" CHECK ("nodes"."color" in ('red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray'));

@@ -1,7 +1,9 @@
 import { NODE_TYPES, PROJECT_ROLES } from "@manuspace/shared";
+import { sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
 	boolean,
+	check,
 	index,
 	integer,
 	jsonb,
@@ -86,6 +88,8 @@ export const nodes = pgTable(
 		}),
 		type: nodeType("type").notNull(),
 		name: text("name").notNull(),
+		/** Couleur façon tag Finder (palette NODE_COLORS de @manuspace/shared), null = aucune. */
+		color: text("color"),
 		position: integer("position").notNull().default(0),
 		/** Fichiers uniquement : clé de l'objet dans le bucket S3. */
 		storageKey: text("storage_key"),
@@ -100,6 +104,10 @@ export const nodes = pgTable(
 	(t) => [
 		index("nodes_manuscript_idx").on(t.manuscriptId),
 		index("nodes_parent_idx").on(t.parentId),
+		check(
+			"nodes_color_check",
+			sql`${t.color} in ('red', 'orange', 'yellow', 'green', 'blue', 'purple', 'gray')`,
+		),
 	],
 );
 

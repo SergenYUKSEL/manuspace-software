@@ -128,10 +128,13 @@ export const manuscriptRoutes = new Hono<ManuscriptEnv>()
 		validate("json", updateNodeSchema),
 		async (c) => {
 			const { id: manuscriptId, nodeId } = c.req.valid("param");
-			const { name, parentId } = c.req.valid("json");
+			const { name, parentId, color } = c.req.valid("json");
 			const node = await findNode(manuscriptId, nodeId);
-			const values: Partial<Pick<typeof nodes.$inferInsert, "name" | "parentId" | "position">> = {};
+			const values: Partial<
+				Pick<typeof nodes.$inferInsert, "name" | "parentId" | "position" | "color">
+			> = {};
 			if (name !== undefined) values.name = name;
+			if (color !== undefined) values.color = color;
 			if (parentId !== undefined && parentId !== node.parentId) {
 				await assertFolder(manuscriptId, parentId);
 				if (parentId && (await wouldCreateCycle(manuscriptId, nodeId, parentId))) {
@@ -142,15 +145,24 @@ export const manuscriptRoutes = new Hono<ManuscriptEnv>()
 				values.parentId = parentId;
 				values.position = await nextPosition(manuscriptId, parentId);
 			}
+			// La couleur seule relève de l'organisation : ni date ni « dernier éditeur ».
+			const organizationOnly = name === undefined && parentId === undefined;
 			await db
 				.update(nodes)
-				.set({ ...values, updatedAt: sql`now()`, updatedById: c.var.user.id })
+				.set(
+					organizationOnly
+						? values
+						: { ...values, updatedAt: sql`now()`, updatedById: c.var.user.id },
+				)
 				.where(eq(nodes.id, nodeId));
 			const updated = (await listNodes(manuscriptId)).find((n) => n.id === nodeId);
 			return c.json(updated as ManuscriptNode);
 		},
 	)
-	/** Suppression douce de l'élément et de tout son contenu (corbeille à venir). */
+	/**
+	 * Mise à la corbeille de l'élément et de tout son contenu, dans une seule requête : le même
+	 * horodatage `deleted_at` identifie ce qui a été supprimé ensemble (restauration du lot).
+	 */
 	.delete("/:id/nodes/:nodeId", requireRole("EDITOR"), nodeParam, async (c) => {
 		const { id: manuscriptId, nodeId } = c.req.valid("param");
 		await findNode(manuscriptId, nodeId);

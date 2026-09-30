@@ -25,6 +25,36 @@ export const membersQuery = (id: string) =>
 		queryFn: () => call(api.manuscripts[":id"].members.$get({ param: { id } })),
 	});
 
+export const trashQuery = (id: string) =>
+	queryOptions({
+		queryKey: ["manuscripts", id, "trash"],
+		queryFn: () => call(api.manuscripts[":id"].trash.$get({ param: { id } })),
+	});
+
+export const versionsQuery = (manuscriptId: string, nodeId: string) =>
+	queryOptions({
+		queryKey: ["manuscripts", manuscriptId, "nodes", nodeId, "versions"],
+		queryFn: () =>
+			call(
+				api.manuscripts[":id"].nodes[":nodeId"].versions.$get({
+					param: { id: manuscriptId, nodeId },
+				}),
+			),
+	});
+
+export const versionTextQuery = (manuscriptId: string, nodeId: string, revision: number) =>
+	queryOptions({
+		queryKey: ["manuscripts", manuscriptId, "nodes", nodeId, "versions", revision],
+		queryFn: () =>
+			call(
+				api.manuscripts[":id"].nodes[":nodeId"].versions[":revision"].$get({
+					param: { id: manuscriptId, nodeId, revision: String(revision) },
+				}),
+			),
+		// Le texte d'une révision passée ne change jamais.
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+
 /** Vocabulaire métier des rôles (brief : co-auteur, correcteur, bêta-lecteur). */
 export const ROLE_LABELS: Record<ProjectRole, string> = {
 	OWNER: "Auteur principal",

@@ -302,3 +302,64 @@ describe("collaborateurs", () => {
 		).toBe(404);
 	});
 });
+
+describe("couleurs", () => {
+	const patch = (cookie: string, manuscriptId: string, nodeId: string, body: unknown) =>
+		request("PATCH", `/manuscripts/${manuscriptId}/nodes/${nodeId}`, { cookie, body });
+
+	test("EDITOR : couleur posée puis effacée, visible par un lecteur", async () => {
+		const { owner, guest, manuscript } = await sharedManuscript("EDITOR");
+		const folder = byName(await getNodes(guest.cookie, manuscript.id), "Univers");
+
+		const colored = await patch(guest.cookie, manuscript.id, folder.id, { color: "purple" });
+		expect(colored.res.status).toBe(200);
+		expect(colored.json.color).toBe("purple");
+		expect(byName(await getNodes(owner.cookie, manuscript.id), "Univers").color).toBe("purple");
+
+		const cleared = await patch(guest.cookie, manuscript.id, folder.id, { color: null });
+		expect(cleared.json.color).toBeNull();
+	});
+
+	test("valeur hors palette : 400 ; lecteur : 403", async () => {
+		const { owner, guest, manuscript } = await sharedManuscript("VIEWER");
+		const chapter = byName(await getNodes(owner.cookie, manuscript.id), "Chapitre 1");
+		expect(
+			(await patch(owner.cookie, manuscript.id, chapter.id, { color: "pink" })).res.status,
+		).toBe(400);
+		expect(
+			(await patch(guest.cookie, manuscript.id, chapter.id, { color: "red" })).res.status,
+		).toBe(403);
+	});
+
+	test("couleur seule : date et dernier éditeur inchangés ; avec un renommage : mis à jour", async () => {
+		const { guest, manuscript } = await sharedManuscript("EDITOR");
+		const chapter = byName(await getNodes(guest.cookie, manuscript.id), "Chapitre 1");
+
+		const colored = await patch(guest.cookie, manuscript.id, chapter.id, { color: "red" });
+		expect(colored.json.updatedAt).toBe(chapter.updatedAt);
+		expect(colored.json.updatedBy?.id).toBe(chapter.updatedBy?.id);
+
+		const renamed = await patch(guest.cookie, manuscript.id, chapter.id, {
+			color: "green",
+			name: "Prologue",
+		});
+		expect(renamed.json).toMatchObject({ color: "green", name: "Prologue" });
+		expect(renamed.json.updatedBy.id).toBe(guest.user.id);
+	});
+
+	test("couleur conservée après corbeille puis restauration", async () => {
+		const { cookie } = await loggedInUser();
+		const manuscript = await createManuscript(cookie);
+		const folder = byName(await getNodes(cookie, manuscript.id), "Personnages");
+		await patch(cookie, manuscript.id, folder.id, { color: "orange" });
+
+		await request("DELETE", `/manuscripts/${manuscript.id}/nodes/${folder.id}`, { cookie });
+		const restored = await request(
+			"POST",
+			`/manuscripts/${manuscript.id}/trash/${folder.id}/restore`,
+			{ cookie },
+		);
+		expect(restored.res.status).toBe(200);
+		expect(byName(await getNodes(cookie, manuscript.id), "Personnages").color).toBe("orange");
+	});
+});
