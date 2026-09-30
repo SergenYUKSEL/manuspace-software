@@ -1,15 +1,19 @@
 import type { PublicUser } from "@manuspace/shared";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PageToolbar } from "@/components/app-shell/page-toolbar";
 import { FormField } from "@/components/form-field";
+import { SegmentedControl } from "@/components/segmented-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, call } from "@/lib/api";
 import { meQuery } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 
 export const Route = createFileRoute("/_app/compte")({
 	component: AccountPage,
@@ -33,12 +37,41 @@ function formValues(event: React.FormEvent<HTMLFormElement>) {
 
 function AccountPage() {
 	return (
-		<div className="grid max-w-2xl gap-6">
-			<h1 className="font-serif text-3xl">Mon compte</h1>
-			<ProfileCard />
-			<PasswordCard />
-			<TwoFactorCard />
-		</div>
+		<>
+			<PageToolbar title="Mon compte" />
+			<div className="grid max-w-2xl gap-5 p-5">
+				<ProfileCard />
+				<AppearanceCard />
+				<PasswordCard />
+				<TwoFactorCard />
+			</div>
+		</>
+	);
+}
+
+function AppearanceCard() {
+	const { preference, setPreference } = useTheme();
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Apparence</CardTitle>
+				<CardDescription>
+					Réglage propre à cet appareil. Auto suit celui du système.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<SegmentedControl
+					label="Apparence"
+					value={preference}
+					onChange={setPreference}
+					options={[
+						{ value: "auto", label: "Auto", icon: MonitorIcon },
+						{ value: "light", label: "Clair", icon: SunIcon },
+						{ value: "dark", label: "Sombre", icon: MoonIcon },
+					]}
+				/>
+			</CardContent>
+		</Card>
 	);
 }
 

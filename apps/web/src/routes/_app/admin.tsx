@@ -2,6 +2,7 @@ import type { PublicUser } from "@manuspace/shared";
 import { queryOptions, useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { PageToolbar } from "@/components/app-shell/page-toolbar";
 import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,11 +33,13 @@ export const Route = createFileRoute("/_app/admin")({
 
 function AdminPage() {
 	return (
-		<div className="grid gap-6">
-			<h1 className="font-serif text-3xl">Administration</h1>
-			<CreateUserCard />
-			<UsersCard />
-		</div>
+		<>
+			<PageToolbar title="Administration" />
+			<div className="grid gap-5 p-5">
+				<CreateUserCard />
+				<UsersCard />
+			</div>
+		</>
 	);
 }
 

@@ -1,10 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { BookIcon } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, call } from "@/lib/api";
 import { meQuery } from "@/lib/auth";
 
@@ -48,60 +48,61 @@ function LoginPage() {
 	}
 
 	return (
-		<main className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle className="font-serif text-2xl">Manuspace</CardTitle>
-					<CardDescription>
+		<main className="grid min-h-dvh place-items-center bg-gradient-to-b from-muted to-background p-4">
+			<div className="w-full max-w-sm rounded-2xl bg-popover p-7 shadow-[var(--shadow-window)]">
+				<div className="mb-5 grid justify-items-center gap-2 text-center">
+					<span className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-primary/80 to-primary text-primary-foreground shadow-md">
+						<BookIcon className="size-7" />
+					</span>
+					<h1 className="font-serif text-xl font-semibold">Manuspace</h1>
+					<p className="text-[13px] text-muted-foreground">
 						{credentials
 							? "Saisissez le code à 6 chiffres de votre application d'authentification."
 							: "Connectez-vous à votre bibliothèque de manuscrits."}
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form onSubmit={onSubmit} className="grid gap-4">
-						{credentials ? (
+					</p>
+				</div>
+				<form onSubmit={onSubmit} className="grid gap-4">
+					{credentials ? (
+						<FormField
+							key="totp"
+							label="Code de vérification"
+							name="totp"
+							inputMode="numeric"
+							autoComplete="one-time-code"
+							pattern="\d{6}"
+							maxLength={6}
+							required
+							autoFocus
+						/>
+					) : (
+						<>
 							<FormField
-								key="totp"
-								label="Code de vérification"
-								name="totp"
-								inputMode="numeric"
-								autoComplete="one-time-code"
-								pattern="\d{6}"
-								maxLength={6}
+								label="Email"
+								name="email"
+								type="email"
+								autoComplete="email"
 								required
 								autoFocus
 							/>
-						) : (
-							<>
-								<FormField
-									label="Email"
-									name="email"
-									type="email"
-									autoComplete="email"
-									required
-									autoFocus
-								/>
-								<FormField
-									label="Mot de passe"
-									name="password"
-									type="password"
-									autoComplete="current-password"
-									required
-								/>
-							</>
-						)}
-						<Button type="submit" disabled={login.isPending}>
-							{credentials ? "Vérifier" : "Se connecter"}
+							<FormField
+								label="Mot de passe"
+								name="password"
+								type="password"
+								autoComplete="current-password"
+								required
+							/>
+						</>
+					)}
+					<Button type="submit" disabled={login.isPending}>
+						{credentials ? "Vérifier" : "Se connecter"}
+					</Button>
+					{credentials && (
+						<Button type="button" variant="ghost" onClick={() => setCredentials(null)}>
+							Retour
 						</Button>
-						{credentials && (
-							<Button type="button" variant="ghost" onClick={() => setCredentials(null)}>
-								Retour
-							</Button>
-						)}
-					</form>
-				</CardContent>
-			</Card>
+					)}
+				</form>
+			</div>
 		</main>
 	);
 }
